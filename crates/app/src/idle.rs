@@ -208,6 +208,49 @@ pub fn boot(stage: Boot, t: u64) -> Box<Rgb> {
     p.0
 }
 
+/// One turn at 33⅓ rpm.
+pub const RECORD_TURN_MS: u64 = 1800;
+const RECORD_R: f32 = 30.5;
+const LABEL_R: f32 = 10.5;
+
+/// While a record plays that isn't recognised (yet): the record turning, `t` ms
+/// in. Its sheen brightens with `loudness`, 0 to 1.
+pub fn record(t: u64, loudness: f32) -> Box<Rgb> {
+    use std::f32::consts::{PI, TAU};
+    let mut p = Canvas(Box::new([0; SIZE * SIZE * 3]));
+    let turn = (t % RECORD_TURN_MS) as f32 / RECORD_TURN_MS as f32 * TAU;
+    let (sin, cos) = turn.sin_cos();
+    let mid = (SIZE as f32 - 1.0) / 2.0;
+    let sheen_max = 30.0 + 60.0 * loudness.clamp(0.0, 1.0);
+    for y in 0..SIZE as i32 {
+        for x in 0..SIZE as i32 {
+            let (dx, dy) = (x as f32 - mid, y as f32 - mid);
+            let r = dx.hypot(dy);
+            let edge = (RECORD_R + 0.5 - r).clamp(0.0, 1.0);
+            if edge == 0.0 || r < 1.2 {
+                continue; // off the record, or the spindle hole
+            }
+            // The vinyl: fine grooves, a lighter rim, a sheen from the top left that stays put.
+            let groove = if (r * 1.5) as i32 % 2 == 0 { 1.0 } else { 0.75 };
+            let rim = if r > RECORD_R - 1.0 { 14.0 } else { 0.0 };
+            let sheen = (2.0 * (dy.atan2(dx) + 0.75 * PI)).cos().max(0.0).powi(6) * sheen_max;
+            let v = 16.0 + rim + sheen * groove;
+            let vinyl = [v, v, v * 1.06];
+            // The label turns: two printed lines on amber.
+            let (u, w) = (dx * cos + dy * sin, -dx * sin + dy * cos);
+            let printed = (u.abs() <= 6.0 && (2.5..=4.0).contains(&w)) || (u.abs() <= 4.0 && (-4.5..=-3.0).contains(&w));
+            let label = if printed { [255.0, 236.0, 196.0] } else { AMBER.map(f32::from) };
+            let on_label = (LABEL_R + 0.5 - r).clamp(0.0, 1.0);
+            let mut c = [0u8; 3];
+            for k in 0..3 {
+                c[k] = ((vinyl[k] + (label[k] - vinyl[k]) * on_label) * edge).round() as u8;
+            }
+            p.set(x, y, c);
+        }
+    }
+    p.0
+}
+
 /// Cut text to the panel's width, less a margin each side.
 fn fit(s: &str, font: Font, scale: i32) -> String {
     let mut s: Vec<char> = s.chars().collect();
@@ -492,6 +535,20 @@ mod tests {
         let lit = |c: [u8; 3]| (0..SIZE).flat_map(|y| (0..SIZE).map(move |x| (x, y))).filter(|&(x, y)| px(&start, x, y) == c).count();
         assert!(lit(AMBER) > 40 && lit(WHITE) > 30);
         assert_ne!(boot(Boot::WiFi, 0), boot(Boot::HomeAssistant, 0)); // says what it waits for
+    }
+
+    #[test]
+    fn record_turns() {
+        let a = record(0, 0.5);
+        assert_eq!(px(&a, 0, 0), [0, 0, 0]); // the corners are off the record
+        assert_eq!(px(&a, 31, 31), [0, 0, 0]); // the spindle hole
+        assert_eq!(px(&a, 31, 24), AMBER); // the label
+        assert!(px(&a, 31, 4)[0] > 0); // the vinyl
+        assert_ne!(record(RECORD_TURN_MS / 4, 0.5), a);
+        assert_eq!(record(RECORD_TURN_MS, 0.5), a); // a whole turn
+        // Louder, a brighter sheen.
+        let lit = |img: &Rgb| img.iter().map(|&v| v as u32).sum::<u32>();
+        assert!(lit(&record(0, 1.0)) > lit(&record(0, 0.0)));
     }
 
     const TUESDAY: LocalTime = LocalTime { minute: 14 * 60 + 5, weekday: 2, day: 3, month: 11 };

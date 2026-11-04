@@ -49,6 +49,8 @@ const HA_ART_PROXY: &str = "/api/media_player_proxy/";
 /// seconds of a track (the Apple TV's grey note) and the real cover later at the same URL.
 const REFETCH_MS: [Ms; 2] = [4000, 12000];
 pub const TEST_PATTERN_MS: Ms = 8000;
+/// The turning record, about 15 frames a second.
+const RECORD_FRAME_MS: Ms = 66;
 /// A calibration screen that stops calling (a closed tab) gives the panel back after this.
 pub const CALIBRATION_MS: Ms = 120_000;
 pub const TELEMETRY_EVERY_MS: Ms = 2000;
@@ -237,12 +239,32 @@ impl Engine {
         let (fade, how) = (self.device.settings.display.crossfade_ms as Ms, self.device.settings.display.transition);
         if self.wanted.is_empty() {
             self.idle = None;
-            self.show_idle(now);
+            self.show_empty(now);
         } else if let Some(img) = self.images.get(&self.wanted) {
             let key = format!("{}#{}", self.wanted, self.art_rev);
             self.compositor.show(Some(img.clone()), &key, now, fade, how);
             self.compositor.pan(self.strips.get(&self.wanted).cloned());
         }
+    }
+
+    /// No art: a record turning while one plays unrecognised, else the idle screen.
+    fn show_empty(&mut self, now: Ms) {
+        if !self.device.unrecognised() {
+            return self.show_idle(now);
+        }
+        let turning = self.compositor.key().starts_with("record ");
+        let key = format!("record {}", now / RECORD_FRAME_MS);
+        // The first frame comes in with the usual transition; the turning waits for it.
+        if self.compositor.key() == key || (turning && self.compositor.animating(now)) {
+            return;
+        }
+        let d = &self.device.settings.display;
+        let (fade, how) = if turning { (0, Transition::Cut) } else { (d.crossfade_ms as Ms, d.transition) };
+        let l = &self.device.settings.listening;
+        let db = self.device.levels().last_db() as f64;
+        let loudness = ((db - l.gap_threshold_db) / (l.music_threshold_db + 25.0 - l.gap_threshold_db)).clamp(0.0, 1.0);
+        self.compositor.show(Some(Arc::from(idle::record(now, loudness as f32))), &key, now, fade, how);
+        self.idle = None; // the idle screen comes back with a transition
     }
 
     /// No art: the idle screen, redrawn when what it says changes (the minute, a state).
@@ -285,7 +307,7 @@ impl Engine {
             p.want_art(&self.wanted);
         }
         if self.wanted.is_empty() && self.test_pattern_until == 0 {
-            self.show_idle(now);
+            self.show_empty(now);
         }
         if self.trial.is_some_and(|(_, until)| now >= until) {
             self.end_calibration(now);
@@ -776,6 +798,35 @@ mod tests {
         e.ha_event(&json!({"c": {"media_player.wiim_ultra_2": {"+": {"a": {"source": "Network"}}}}}), t, &mut r);
         assert_eq!(r.mics.last(), Some(&false));
         assert!(r.sent.iter().any(|m| m["name"] == "analog_stopped"));
+    }
+
+    #[test]
+    fn a_record_turns_until_it_is_recognised() {
+        let (mut r, mut e) = (Recorder::default(), engine());
+        let mut t = 1;
+        e.ha_event(&json!({"a": {"media_player.wiim_ultra_2": {"s": "idle", "a": {"source": "Phono In"}}}}), t, &mut r);
+        while t < 1600 {
+            e.level(-30.0, t, &mut r);
+            t += 50;
+        }
+        e.recognition(&json!({"match": false, "reason": "no_match"}), t, &mut r);
+        let mut frames = Vec::new();
+        for _ in 0..40 {
+            t += 33;
+            e.tick(t, &mut r);
+            frames.push(r.last.clone().unwrap());
+        }
+        assert!(frames[39].iter().any(|&p| p != 0));
+        assert_ne!(frames[30][..], frames[39][..]); // turning
+        e.recognition(&json!({"match": true, "title": "Dreams", "artist": "Fleetwood Mac", "album": "Rumours",
+            "art_url": "https://art/rumours.jpg", "ends_in_ms": 200000}), t, &mut r);
+        e.image("https://art/rumours.jpg", &red(8), 8, 8, t, &mut r);
+        for _ in 0..30 {
+            t += 33;
+            e.tick(t, &mut r);
+        }
+        let art = r.last.clone().unwrap();
+        assert!(art.iter().all(|&p| p == art[0]) && art[0] != 0);
     }
 
     #[test]

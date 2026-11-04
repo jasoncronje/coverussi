@@ -715,6 +715,10 @@ impl Device {
     pub fn art_dimmed(&self) -> bool {
         self.mode == Mode::Analog && self.listener.dimmed()
     }
+    /// Music on the analog source with no art: not recognised yet, or not at all.
+    pub fn unrecognised(&self) -> bool {
+        self.mode == Mode::Analog && self.art.is_empty() && self.listener.state() != ListenerState::Quiet
+    }
     pub fn mic_wanted(&self) -> bool {
         self.mode == Mode::Analog || self.calibrating()
     }
