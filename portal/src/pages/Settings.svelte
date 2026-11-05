@@ -46,13 +46,6 @@
 
   const groups: Group[] = [
     {
-      id: 'album', area: 'general', key: 'recognition', title: 'Album',
-      fields: [
-        { key: 'prefer_album', label: 'Prefer the album version', kind: 'bool', tip: 'Shazam often names a single, a best-of or a live record. With this on, the display shows the studio album the song first came out on.' },
-        { key: 'store_country', label: 'Store country', kind: 'text', advanced: true, tip: 'The Apple Music store covers and albums come from, as a two-letter code like US or GB. Empty: the country of the time zone.' }
-      ]
-    },
-    {
       id: 'time', area: 'general', key: 'display', title: 'Time',
       fields: [
         { key: 'time_zone', label: 'Time zone', kind: 'zone', tip: 'Where the display is. The night hours follow it, daylight saving included.' }
@@ -81,6 +74,13 @@
       id: 'artwork', area: 'display', key: 'display', title: 'Artwork',
       fields: [
         { key: 'fit', label: 'Wide pictures', kind: 'fit', tip: 'For art that isn’t square, like a 16:9 video thumbnail. Crop to square fills the panel with the middle; Black bars shows the whole picture; Pan across fills the panel and slides slowly to one end and back.' }
+      ]
+    },
+    {
+      id: 'album', area: 'display', key: 'recognition', title: 'Album',
+      fields: [
+        { key: 'prefer_album', label: 'Prefer the album version', kind: 'bool', tip: 'Shazam often names a single, a best-of or a live record. With this on, the display shows the studio album the song first came out on.' },
+        { key: 'store_country', label: 'Store country', kind: 'text', advanced: true, tip: 'The Apple Music store covers and albums come from, as a two-letter code like US or GB. Empty: the country of the time zone.' }
       ]
     },
     {
