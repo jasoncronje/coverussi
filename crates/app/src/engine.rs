@@ -51,9 +51,6 @@ const REFETCH_MS: [Ms; 2] = [4000, 12000];
 pub const TEST_PATTERN_MS: Ms = 8000;
 /// The turning record, about 15 frames a second.
 const RECORD_FRAME_MS: Ms = 66;
-/// A recognised record: its cover this long, then its title and artist.
-const COVER_MS: Ms = 20_000;
-const SONG_MS: Ms = 6_000;
 /// A calibration screen that stops calling (a closed tab) gives the panel back after this.
 pub const CALIBRATION_MS: Ms = 120_000;
 pub const TELEMETRY_EVERY_MS: Ms = 2000;
@@ -256,11 +253,14 @@ impl Engine {
     /// A recognised record's cover, with its title and artist in between.
     fn show_song(&mut self, now: Ms) {
         let showing = self.compositor.key().starts_with("song ");
+        let d = &self.device.settings.display;
+        let (cover, text) = (d.song_cover_s as Ms * 1000, d.song_text_s as Ms * 1000);
         let song = self.song.as_ref().filter(|_| {
-            self.device.mode() == Mode::Analog
+            d.song_screen
+                && self.device.mode() == Mode::Analog
                 && !self.device.art_dimmed()
                 && self.images.contains_key(&self.wanted)
-                && (now - self.wanted_at) % (COVER_MS + SONG_MS) >= COVER_MS
+                && (now - self.wanted_at) % (cover + text) >= cover
         });
         match song {
             Some((title, artist)) => {
@@ -277,7 +277,7 @@ impl Engine {
 
     /// No art: a record turning while one plays unrecognised, else the idle screen.
     fn show_empty(&mut self, now: Ms) {
-        if !self.device.unrecognised() {
+        if !self.device.settings.display.record || !self.device.unrecognised() {
             return self.show_idle(now);
         }
         let turning = self.compositor.key().starts_with("record ");
@@ -290,8 +290,9 @@ impl Engine {
         let (fade, how) = if turning { (0, Transition::Cut) } else { (d.crossfade_ms as Ms, d.transition) };
         let l = &self.device.settings.listening;
         let db = self.device.levels().last_db() as f64;
-        let loudness = ((db - l.gap_threshold_db) / (l.music_threshold_db + 25.0 - l.gap_threshold_db)).clamp(0.0, 1.0);
-        self.compositor.show(Some(Arc::from(idle::record(now, loudness as f32))), &key, now, fade, how);
+        let loudness = if d.record_sheen { ((db - l.gap_threshold_db) / (l.music_threshold_db + 25.0 - l.gap_threshold_db)).clamp(0.0, 1.0) } else { 0.5 };
+        let label = d.record_color().unwrap_or([242, 179, 61]);
+        self.compositor.show(Some(Arc::from(idle::record(now, d.record_turn_ms(), label, loudness as f32))), &key, now, fade, how);
         self.idle = None; // the idle screen comes back with a transition
     }
 
@@ -865,6 +866,37 @@ mod tests {
     }
 
     #[test]
+    fn the_record_and_the_title_can_be_turned_off() {
+        let (mut r, mut e) = (Recorder::default(), Engine::new());
+        let mut s = house_settings();
+        (s.display.record, s.display.song_screen) = (false, false);
+        e.device.set_settings(s);
+        let mut t = 1;
+        e.ha_event(&json!({"a": {"media_player.wiim_ultra_2": {"s": "idle", "a": {"source": "Phono In"}}}}), t, &mut r);
+        while t < 1600 {
+            e.level(-30.0, t, &mut r);
+            t += 50;
+        }
+        e.recognition(&json!({"match": false, "reason": "no_match"}), t, &mut r);
+        for _ in 0..40 {
+            t += 33;
+            e.tick(t, &mut r);
+        }
+        assert!(!e.compositor.key().starts_with("record "));
+        e.recognition(&json!({"match": true, "title": "Dreams", "artist": "Fleetwood Mac", "album": "Rumours",
+            "art_url": "https://art/rumours.jpg", "ends_in_ms": 200000}), t, &mut r);
+        e.image("https://art/rumours.jpg", &red(8), 8, 8, t, &mut r);
+        let start = t;
+        while t < start + 25_000 {
+            t += 33;
+            e.level(-30.0, t, &mut r);
+            e.tick(t, &mut r);
+        }
+        let art = r.last.clone().unwrap();
+        assert!(art.iter().all(|&p| p == art[0]) && art[0] != 0); // the cover, no title
+    }
+
+    #[test]
     fn a_recognised_record_shows_its_title_between_covers() {
         let (mut r, mut e) = (Recorder::default(), engine());
         let mut t = 1;
@@ -887,9 +919,9 @@ mod tests {
         };
         let cover = at(&mut e, &mut r, 5_000);
         assert!(cover.iter().all(|&p| p == cover[0]) && cover[0] != 0);
-        let song = at(&mut e, &mut r, COVER_MS + 2_000);
+        let song = at(&mut e, &mut r, 22_000);
         assert!(song.contains(&0) && song.iter().any(|&p| p != 0)); // text on black
-        assert_eq!(at(&mut e, &mut r, COVER_MS + SONG_MS + 2_000)[..], cover[..]); // and back
+        assert_eq!(at(&mut e, &mut r, 28_000)[..], cover[..]); // and back
     }
 
     #[test]

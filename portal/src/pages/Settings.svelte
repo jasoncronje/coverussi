@@ -37,7 +37,10 @@
   // What a picture that isn't square becomes.
   const FITS = [{ value: 'crop', label: 'Crop to square' }, { value: 'letterbox', label: 'Black bars' }, { value: 'pan', label: 'Pan across' }];
 
-  type Kind = 'int' | 'float' | 'text' | 'time' | 'zone' | 'bool' | 'list' | 'numlist' | 'transition' | 'speed' | 'rotation' | 'fit';
+  // How fast the record turns while the song is identified.
+  const RPMS = [33, 45, 78].map((r) => ({ value: r, label: `${r} rpm` }));
+
+  type Kind = 'int' | 'float' | 'text' | 'time' | 'zone' | 'bool' | 'list' | 'numlist' | 'transition' | 'speed' | 'rotation' | 'fit' | 'rpm' | 'colour';
   // tip: what it does, in a tooltip. advanced: tuning most people never touch, hidden until Show advanced is on.
   interface Field { key: string; label: string; kind: Kind; tip?: string; min?: number; max?: number; step?: number; unit?: string; advanced?: boolean }
   // key: the settings section its fields live in; several groups can share one.
@@ -95,6 +98,25 @@
       fields: [
         { key: 'pause_grace_s', label: 'Keep art after pause', kind: 'int', min: 0, max: 3600, unit: 's', tip: 'A paused stream keeps its cover this long before the panel goes dark.' },
         { key: 'side_end_dim_s', label: 'Dim after side ends', kind: 'int', min: 0, max: 3600, unit: 's', advanced: true, tip: 'When a record side ends, the cover dims, then clears after this long.' }
+      ]
+    },
+    {
+      id: 'song', area: 'display', key: 'display', title: 'Title and artist',
+      tip: 'Once a record is identified, its cover gives way to the song’s title and artist now and then.',
+      fields: [
+        { key: 'song_screen', label: 'Show between covers', kind: 'bool', tip: 'Off: the cover stays on the panel the whole song.' },
+        { key: 'song_cover_s', label: 'Cover for', kind: 'int', min: 5, max: 600, unit: 's', tip: 'How long the cover shows before the title and artist.' },
+        { key: 'song_text_s', label: 'Title for', kind: 'int', min: 2, max: 60, unit: 's', tip: 'How long the title and artist show before the cover comes back.' }
+      ]
+    },
+    {
+      id: 'record', area: 'display', key: 'display', title: 'While identifying',
+      tip: 'A record plays that isn’t identified yet, or Shazam doesn’t know it.',
+      fields: [
+        { key: 'record', label: 'Turning record', kind: 'bool', tip: 'Off: the panel shows what it shows when nothing plays.' },
+        { key: 'record_rpm', label: 'Speed', kind: 'rpm', tip: 'How fast the record turns.' },
+        { key: 'record_label', label: 'Label colour', kind: 'colour', tip: 'The colour of the label in the middle of the record.' },
+        { key: 'record_sheen', label: 'Shines with the music', kind: 'bool', tip: 'The light on the vinyl gets brighter as the music gets louder.' }
       ]
     },
     {
@@ -339,6 +361,13 @@
                 <Segmented label="Wide pictures" value={value(g, f)} options={FITS} onchange={(v) => set(g, f, v)} />
               </span>
             </div>
+          {:else if f.kind === 'rpm'}
+            <div class="field">
+              <span class="name">{f.label}{#if f.tip}<Tip text={f.tip} />{/if}{#if !isDefault(g, f)}<span class="changed" title="Not the default"></span>{/if}</span>
+              <span class="control">
+                <Segmented label="Record speed" value={value(g, f)} options={RPMS} onchange={(v) => set(g, f, v)} />
+              </span>
+            </div>
           {:else if f.kind === 'speed'}
             <div class="field">
               <span class="name">{f.label}{#if f.tip}<Tip text={f.tip} />{/if}{#if !isDefault(g, f)}<span class="changed" title="Not the default"></span>{/if}</span>
@@ -360,6 +389,8 @@
               {:else if f.kind === 'int' || f.kind === 'float'}
                 <span class="suffixed" data-unit={f.unit}><input type="number" class="num" min={f.min} max={f.max} step={f.step ?? (f.kind === 'int' ? 1 : 0.5)}
                   value={value(g, f)} oninput={(e) => set(g, f, parseNumber(f, e.currentTarget.value))} /></span>
+              {:else if f.kind === 'colour'}
+                <input type="color" value={value(g, f)} oninput={(e) => set(g, f, e.currentTarget.value)} />
               {:else if f.kind === 'time'}
                 <input type="time" value={value(g, f)} oninput={(e) => set(g, f, e.currentTarget.value)} />
               {:else if f.kind === 'zone'}
