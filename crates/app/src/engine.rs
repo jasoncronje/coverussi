@@ -51,6 +51,9 @@ const REFETCH_MS: [Ms; 2] = [4000, 12000];
 pub const TEST_PATTERN_MS: Ms = 8000;
 /// The turning record, about 15 frames a second.
 const RECORD_FRAME_MS: Ms = 66;
+/// A recognised record: its cover this long, then its title and artist.
+const COVER_MS: Ms = 20_000;
+const SONG_MS: Ms = 6_000;
 /// A calibration screen that stops calling (a closed tab) gives the panel back after this.
 pub const CALIBRATION_MS: Ms = 120_000;
 pub const TELEMETRY_EVERY_MS: Ms = 2000;
@@ -85,6 +88,8 @@ pub struct Engine {
     clock: Option<LocalTime>,
     /// What the idle screen says, while it's up (no art wanted).
     idle: Option<Option<idle::Content>>,
+    /// The last song recognised: title, artist.
+    song: Option<(String, String)>,
     panel: PanelState,
 }
 
@@ -115,6 +120,7 @@ impl Default for Engine {
             local_min: 12 * 60,
             clock: None,
             idle: None,
+            song: None,
             panel: PanelState::default(),
         }
     }
@@ -247,6 +253,28 @@ impl Engine {
         }
     }
 
+    /// A recognised record's cover, with its title and artist in between.
+    fn show_song(&mut self, now: Ms) {
+        let showing = self.compositor.key().starts_with("song ");
+        let song = self.song.as_ref().filter(|_| {
+            self.device.mode() == Mode::Analog
+                && !self.device.art_dimmed()
+                && self.images.contains_key(&self.wanted)
+                && (now - self.wanted_at) % (COVER_MS + SONG_MS) >= COVER_MS
+        });
+        match song {
+            Some((title, artist)) => {
+                let key = format!("song {title}\n{artist}");
+                if self.compositor.key() != key {
+                    let d = &self.device.settings.display;
+                    self.compositor.show(Some(Arc::from(idle::song(title, artist))), &key, now, d.crossfade_ms as Ms, d.transition);
+                }
+            }
+            None if showing => self.show_wanted(now),
+            None => {}
+        }
+    }
+
     /// No art: a record turning while one plays unrecognised, else the idle screen.
     fn show_empty(&mut self, now: Ms) {
         if !self.device.unrecognised() {
@@ -308,6 +336,9 @@ impl Engine {
         }
         if self.wanted.is_empty() && self.test_pattern_until == 0 {
             self.show_empty(now);
+        }
+        if !self.wanted.is_empty() && self.test_pattern_until == 0 {
+            self.show_song(now);
         }
         if self.trial.is_some_and(|(_, until)| now >= until) {
             self.end_calibration(now);
@@ -392,7 +423,11 @@ impl Engine {
     }
 
     pub fn recognition(&mut self, answer: &Value, now: Ms, p: &mut impl Platform) {
-        self.device.recognition(&parse_recognition(answer), now);
+        let r = parse_recognition(answer);
+        if r.matched {
+            self.song = Some((r.title.clone(), r.artist.clone()));
+        }
+        self.device.recognition(&r, now);
         self.step(now, p);
     }
 
@@ -827,6 +862,34 @@ mod tests {
         }
         let art = r.last.clone().unwrap();
         assert!(art.iter().all(|&p| p == art[0]) && art[0] != 0);
+    }
+
+    #[test]
+    fn a_recognised_record_shows_its_title_between_covers() {
+        let (mut r, mut e) = (Recorder::default(), engine());
+        let mut t = 1;
+        e.ha_event(&json!({"a": {"media_player.wiim_ultra_2": {"s": "idle", "a": {"source": "Phono In"}}}}), t, &mut r);
+        while t < 1600 {
+            e.level(-30.0, t, &mut r);
+            t += 50;
+        }
+        e.recognition(&json!({"match": true, "title": "Dreams", "artist": "Fleetwood Mac", "album": "Rumours",
+            "art_url": "https://art/rumours.jpg", "ends_in_ms": 200000}), t, &mut r);
+        e.image("https://art/rumours.jpg", &red(8), 8, 8, t, &mut r);
+        let start = t;
+        let mut at = |e: &mut Engine, r: &mut Recorder, ms: Ms| {
+            while t < start + ms {
+                t += 33;
+                e.level(-30.0, t, r);
+                e.tick(t, r);
+            }
+            r.last.clone().unwrap()
+        };
+        let cover = at(&mut e, &mut r, 5_000);
+        assert!(cover.iter().all(|&p| p == cover[0]) && cover[0] != 0);
+        let song = at(&mut e, &mut r, COVER_MS + 2_000);
+        assert!(song.contains(&0) && song.iter().any(|&p| p != 0)); // text on black
+        assert_eq!(at(&mut e, &mut r, COVER_MS + SONG_MS + 2_000)[..], cover[..]); // and back
     }
 
     #[test]
