@@ -3,6 +3,7 @@
   import { api, whenUnauthorized } from './lib/api';
   import { live } from './lib/live.svelte';
   import { session as auth } from './lib/session.svelte';
+  import { updates, watchUpdates } from './lib/updates.svelte';
   import Icon from './lib/Icon.svelte';
   import Login from './pages/Login.svelte';
   import Now from './pages/Now.svelte';
@@ -30,14 +31,19 @@
     return first in pages ? [first as Page, rest] : ['home', ''];
   }
 
+  let stopUpdates: (() => void) | null = null;
+
   function enter() {
     session = 'in';
     live.start();
+    stopUpdates ??= watchUpdates();
   }
 
   async function logout() {
     await api.logout();
     live.stop();
+    stopUpdates?.();
+    stopUpdates = null;
     session = 'out';
   }
 
@@ -59,6 +65,13 @@
     return () => window.removeEventListener('hashchange', onHash);
   });
 
+  // A newer release than the one running, until it's installing; Controller has the button.
+  const update = $derived.by(() => {
+    const c = updates.check;
+    const running = live.telemetry.firmware;
+    return c?.newer && c.latest !== running && !live.update ? c.latest : '';
+  });
+
   // Only a problem earns a mark in the bar, on Settings, which has the details under Controller.
   const problem = $derived(!live.connected ? 'Offline' : live.telemetry.ha_connected === false ? 'Home Assistant not connected' : '');
 </script>
@@ -78,7 +91,10 @@
           <a href="#/{key}" class:active={page === key} aria-current={page === key ? 'page' : undefined}><Icon name={key as Page} />{label}{#if key === 'settings' && problem}<span class="dot warning" title={problem} aria-label={problem}></span>{/if}</a>
         {/each}
       </nav>
-      {#if auth.passwordSet}<button class="link out" onclick={logout}><Icon name="log-out" />Log out</button>{/if}
+      <div class="end">
+        {#if update}<a class="update" href="#/settings/device" title="Install it under Settings > Controller"><Icon name="download" />Update to {update}</a>{/if}
+        {#if auth.passwordSet}<button class="link" onclick={logout}><Icon name="log-out" />Log out</button>{/if}
+      </div>
     </div>
   </header>
 
@@ -94,7 +110,9 @@
   header { position: sticky; top: 0; z-index: 2; background: var(--ground); border-bottom: 1px solid var(--border); }
   .bar, main { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
   .bar { height: 48px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 28px; }
-  .out { justify-self: end; }
+  .end { justify-self: end; display: flex; align-items: center; gap: 16px; }
+  .update { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; background: var(--accent); color: #000000; font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; }
+  .update:hover { background: #ffc85c; }
   .brand { justify-self: start; display: flex; align-items: center; gap: 10px; font-weight: 600; text-decoration: none; }
   .mark { height: 20px; display: block; }
   nav { display: flex; gap: 22px; }
