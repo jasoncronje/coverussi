@@ -63,8 +63,9 @@ pub enum Icon {
 /// What a screen says; the engine redraws only when it changes.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Content {
-    Clock { time: String, date: String },
-    Weather { icon: Icon, temperature: String, condition: String, time: String },
+    /// `ampm` is "AM" or "PM" on a 12-hour clock, else empty; it's drawn beside the time.
+    Clock { time: String, ampm: String, date: String },
+    Weather { icon: Icon, temperature: String, condition: String, time: String, ampm: String },
     /// (label, value) rows.
     Entities(Vec<(String, String)>),
     /// A video app: the time ("AM"/"PM" beside it on a 12-hour clock), how far into the film
@@ -75,10 +76,12 @@ pub enum Content {
 /// The screen to show, or None to leave the panel dark.
 pub fn content(idle: &Idle, ha: &HaStates, clock: Option<LocalTime>) -> Option<Content> {
     let time = || clock.map_or("--:--".to_string(), |c| clock_text(c.minute, idle.clock_24h));
+    let ampm = || ampm_text(clock, idle.clock_24h);
     match idle.show {
         IdleShow::Off => None,
         IdleShow::Clock => Some(Content::Clock {
             time: time(),
+            ampm: ampm(),
             date: clock
                 .map(|c| format!("{} {} {}", DAYS[c.weekday as usize % 7], c.day, MONTHS[(c.month as usize + 11) % 12]))
                 .unwrap_or_default(),
@@ -94,6 +97,7 @@ pub fn content(idle: &Idle, ha: &HaStates, clock: Option<LocalTime>) -> Option<C
                 temperature: temperature.map(|t| format!("{}°", t.round() as i64)).unwrap_or_default(),
                 condition: condition.to_string(),
                 time: time(),
+                ampm: ampm(),
             })
         }
         IdleShow::Entities => Some(Content::Entities(
@@ -117,10 +121,7 @@ pub fn content(idle: &Idle, ha: &HaStates, clock: Option<LocalTime>) -> Option<C
 /// The film screen for the player shown.
 pub fn film(idle: &Idle, p: Option<&Player>, clock: Option<LocalTime>) -> Content {
     let time = clock.map_or("--:--".to_string(), |c| clock_text(c.minute, idle.clock_24h));
-    let ampm = match clock {
-        Some(c) if !idle.clock_24h => if c.minute / 60 % 24 < 12 { "AM" } else { "PM" },
-        _ => "",
-    };
+    let ampm = ampm_text(clock, idle.clock_24h);
     let at = p.and_then(|p| p.position_now(clock.map_or(0.0, |c| c.unix as f64)));
     let duration = p.and_then(|p| p.duration).filter(|d| *d > 0.0);
     // Under an hour, minutes and seconds; "0:31" would read as seconds.
@@ -135,7 +136,7 @@ pub fn film(idle: &Idle, p: Option<&Player>, clock: Option<LocalTime>) -> Conten
         (Some(at), Some(d)) => ((at / d).clamp(0.0, 1.0) * RING as f64) as u32,
         _ => 0,
     };
-    Content::Film { time, ampm: ampm.into(), position, lit }
+    Content::Film { time, ampm, position, lit }
 }
 
 /// Seconds as "H:MM".
@@ -159,6 +160,14 @@ fn ring(i: u32) -> (i32, i32) {
         1 => (n, i - n),
         2 => (3 * n - i, n),
         _ => (0, 4 * n - i),
+    }
+}
+
+/// "AM" or "PM" on a 12-hour clock that's set, else empty.
+fn ampm_text(clock: Option<LocalTime>, h24: bool) -> String {
+    match clock {
+        Some(c) if !h24 => (if c.minute / 60 % 24 < 12 { "AM" } else { "PM" }).into(),
+        _ => String::new(),
     }
 }
 
@@ -205,17 +214,17 @@ fn entity_value(state: &str, unit: &str) -> String {
 pub fn draw(c: &Content) -> Box<Rgb> {
     let mut p = Canvas(Box::new([0; SIZE * SIZE * 3]));
     match c {
-        Content::Clock { time, date } => {
-            p.centered(time, Font::Big, 2, 19, WHITE);
+        Content::Clock { time, ampm, date } => {
+            p.time(time, ampm, Font::Big, 2, 19);
             p.centered(date, Font::Small, 1, 39, GRAY);
         }
-        Content::Weather { icon, temperature, condition, time } => {
+        Content::Weather { icon, temperature, condition, time, ampm } => {
             p.icon(*icon, 15, 13);
             let scale = if Font::Big.width(temperature, 2) <= 32 { 2 } else { 1 };
             let w = Font::Big.width(temperature, scale);
             p.text(temperature, Font::Big, scale, 62 - w, if scale == 2 { 7 } else { 10 }, WHITE);
             p.centered(condition, Font::Small, 1, 31, GRAY);
-            p.centered(time, Font::Big, 2, 43, WHITE);
+            p.time(time, ampm, Font::Big, 2, 43);
         }
         Content::Entities(rows) => {
             let top = (SIZE as i32 - rows.len() as i32 * 16 + 2) / 2;
@@ -226,21 +235,7 @@ pub fn draw(c: &Content) -> Box<Rgb> {
             }
         }
         Content::Film { time, ampm, position, lit } => {
-            // AM/PM sits beside the time, on its baseline, and the two are centred together.
-            // Too wide for that ("12:58"), its letters stack: A over M.
-            let w = Font::Small.width(time, 3);
-            let beside = Font::Small.width(ampm, 1);
-            let stack = w + 2 + beside > SIZE as i32 - 8;
-            let gap = if ampm.is_empty() { 0 } else if stack { 2 + Font::Small.width("M", 1) } else { 2 + beside };
-            let x = (SIZE as i32 - w - gap) / 2;
-            p.text(time, Font::Small, 3, x, 19, WHITE);
-            if stack {
-                for (i, ch) in ampm.chars().enumerate() {
-                    p.text(&ch.to_string(), Font::Small, 1, x + w + 2, 23 + i as i32 * 6, GRAY);
-                }
-            } else {
-                p.text(ampm, Font::Small, 1, x + w + 2, 29, GRAY);
-            }
+            p.time(time, ampm, Font::Small, 3, 19);
             // Centred in the gap between the time (rows 19 to 33) and the ring (row 63).
             p.centered(position, Font::Small, 1, 46, GRAY);
             for i in 0..RING {
@@ -520,6 +515,25 @@ impl Canvas {
         }
     }
 
+    /// The time in white with AM/PM small and grey beside it, on its baseline, the two
+    /// centred together. Too wide for that ("12:58"), the letters stack: A over M.
+    fn time(&mut self, time: &str, ampm: &str, font: Font, scale: i32, y: i32) {
+        let w = font.width(time, scale);
+        let bottom = y + font.height() as i32 * scale;
+        let beside = Font::Small.width(ampm, 1);
+        let stack = w + 2 + beside > SIZE as i32 - 8;
+        let gap = if ampm.is_empty() { 0 } else if stack { 2 + Font::Small.width("M", 1) } else { 2 + beside };
+        let x = (SIZE as i32 - w - gap) / 2;
+        self.text(time, font, scale, x, y, WHITE);
+        if stack {
+            for (i, ch) in ampm.chars().enumerate() {
+                self.text(&ch.to_string(), Font::Small, 1, x + w + 2, bottom - 11 + i as i32 * 6, GRAY);
+            }
+        } else {
+            self.text(ampm, Font::Small, 1, x + w + 2, bottom - 5, GRAY);
+        }
+    }
+
     fn centered(&mut self, s: &str, font: Font, scale: i32, y: i32, c: [u8; 3]) {
         let x = (SIZE as i32 - font.width(s, scale)) / 2;
         self.text(s, font, scale, x, y, c);
@@ -761,12 +775,12 @@ mod tests {
         let ha = HaStates::default();
         assert_eq!(content(&idle(IdleShow::Off), &ha, Some(TUESDAY)), None);
         let c = content(&idle(IdleShow::Clock), &ha, Some(TUESDAY)).unwrap();
-        assert_eq!(c, Content::Clock { time: "14:05".into(), date: "TUE 3 NOV".into() });
+        assert_eq!(c, Content::Clock { time: "14:05".into(), ampm: String::new(), date: "TUE 3 NOV".into() });
         let twelve = Idle { clock_24h: false, ..idle(IdleShow::Clock) };
         let c = content(&twelve, &ha, Some(LocalTime { minute: 5, ..TUESDAY })).unwrap();
-        assert!(matches!(c, Content::Clock { ref time, .. } if time == "12:05"));
+        assert!(matches!(c, Content::Clock { ref time, ref ampm, .. } if time == "12:05" && ampm == "AM"));
         let c = content(&idle(IdleShow::Clock), &ha, None).unwrap();
-        assert_eq!(c, Content::Clock { time: "--:--".into(), date: "".into() });
+        assert_eq!(c, Content::Clock { time: "--:--".into(), ampm: String::new(), date: "".into() });
     }
 
     #[test]
@@ -781,7 +795,8 @@ mod tests {
             icon: Icon::PartlyCloudy,
             temperature: "12°".into(),
             condition: "PARTLY CLOUDY".into(),
-            time: "14:05".into()
+            time: "14:05".into(),
+            ampm: String::new(),
         });
     }
 
@@ -808,7 +823,7 @@ mod tests {
     #[test]
     fn draws_inside_the_panel() {
         let lit = |img: &Rgb| img.chunks(3).filter(|p| p.iter().any(|&v| v > 0)).count();
-        let clock = draw(&Content::Clock { time: "23:59".into(), date: "WED 30 SEP".into() });
+        let clock = draw(&Content::Clock { time: "23:59".into(), ampm: String::new(), date: "WED 30 SEP".into() });
         assert!(lit(&clock) > 100);
         // The time is centred: as much dark on each side.
         let column = |img: &Rgb, x: usize| (0..SIZE).any(|y| img[(y * SIZE + x) * 3] > 0);
@@ -817,9 +832,9 @@ mod tests {
         assert!((first as i32 - (SIZE - 1 - last) as i32).abs() <= 1, "{first} {last}");
         for icon in [Icon::Sun, Icon::Moon, Icon::PartlyCloudy, Icon::Cloud, Icon::Rain, Icon::Pouring, Icon::Snow,
             Icon::Sleet, Icon::Hail, Icon::Storm, Icon::Fog, Icon::Wind] {
-            let w = draw(&Content::Weather { icon, temperature: "-12°".into(), condition: "PARTLY CLOUDY".into(), time: "12:00".into() });
+            let w = draw(&Content::Weather { icon, temperature: "-12°".into(), condition: "PARTLY CLOUDY".into(), time: "12:00".into(), ampm: String::new() });
             assert!(lit(&w) > lit(&draw(&Content::Weather {
-                icon: Icon::Unknown, temperature: "-12°".into(), condition: "PARTLY CLOUDY".into(), time: "12:00".into()
+                icon: Icon::Unknown, temperature: "-12°".into(), condition: "PARTLY CLOUDY".into(), time: "12:00".into(), ampm: String::new()
             })), "{icon:?}");
         }
         let cut = fit("A VERY LONG ENTITY NAME INDEED", Font::Small, 1);
