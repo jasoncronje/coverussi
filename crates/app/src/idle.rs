@@ -251,6 +251,49 @@ pub fn record(t: u64, loudness: f32) -> Box<Rgb> {
     p.0
 }
 
+/// A recognised song between showings of its cover: the title, up to three
+/// lines, over the artist, up to two.
+pub fn song(title: &str, artist: &str) -> Box<Rgb> {
+    let mut p = Canvas(Box::new([0; SIZE * SIZE * 3]));
+    let title = wrap(title, Font::Big, 3);
+    let artist = wrap(artist, Font::Small, 2);
+    let gap = if title.is_empty() || artist.is_empty() { 0 } else { 4 };
+    let height = title.len() as i32 * 9 - 2 + gap + artist.len() as i32 * 7 - 2;
+    let mut y = (SIZE as i32 - height) / 2;
+    for line in &title {
+        p.centered(line, Font::Big, 1, y, WHITE);
+        y += 9;
+    }
+    y += gap - 2;
+    for line in &artist {
+        p.centered(line, Font::Small, 1, y, GRAY);
+        y += 7;
+    }
+    p.0
+}
+
+/// Words to lines that fit the panel, at most `max`; the last cut short if need be.
+fn wrap(s: &str, font: Font, max: usize) -> Vec<String> {
+    let s = s.replace(['’', '‘'], "'").replace(['“', '”'], "\"");
+    let fits = |l: &str| font.width(l, 1) <= SIZE as i32 - 4;
+    let mut lines: Vec<String> = Vec::new();
+    for word in s.split_whitespace() {
+        match lines.last_mut() {
+            Some(l) if fits(&format!("{l} {word}")) => *l = format!("{l} {word}"),
+            _ => lines.push(fit(word, font, 1)),
+        }
+    }
+    if lines.len() > max {
+        lines.truncate(max);
+        let last = &mut lines[max - 1];
+        while !last.is_empty() && !fits(&format!("{last}...")) {
+            last.pop();
+        }
+        *last = format!("{}...", last.trim_end());
+    }
+    lines
+}
+
 /// Cut text to the panel's width, less a margin each side.
 fn fit(s: &str, font: Font, scale: i32) -> String {
     let mut s: Vec<char> = s.chars().collect();
@@ -549,6 +592,18 @@ mod tests {
         // Louder, a brighter sheen.
         let lit = |img: &Rgb| img.iter().map(|&v| v as u32).sum::<u32>();
         assert!(lit(&record(0, 1.0)) > lit(&record(0, 0.0)));
+    }
+
+    #[test]
+    fn song_wraps_to_the_panel() {
+        assert_eq!(wrap("With You (feat. PARTYNEXTDOOR)", Font::Big, 3), ["With You", "(feat.", "PARTYNEXTD"]);
+        assert_eq!(wrap("I Don’t Wanna Know", Font::Small, 2), ["I Don't Wanna", "Know"]);
+        let long = wrap("One Two Three Four Five Six Seven Eight Nine Ten", Font::Big, 3);
+        assert!(long.len() == 3 && long[2].ends_with("..."), "{long:?}");
+        assert!(long.iter().all(|l| Font::Big.width(l, 1) <= 60));
+        let lit = |img: &Rgb| img.chunks(3).filter(|p| p.iter().any(|&v| v > 0)).count();
+        assert!(lit(&song("Dreams", "Fleetwood Mac")) > 60);
+        assert_eq!(lit(&song("", "")), 0);
     }
 
     const TUESDAY: LocalTime = LocalTime { minute: 14 * 60 + 5, weekday: 2, day: 3, month: 11 };
