@@ -272,6 +272,7 @@ mod tests {
             entity: "media_player.receiver".into(),
             attribute: "sound_mode".into(),
             value: "PHONO".into(),
+            enabled: true,
         };
         assert!(a.on(&p));
         ha.apply(&json!({"c": {"media_player.receiver": {"+": {"a": {"sound_mode": "STEREO"}}}}}));
