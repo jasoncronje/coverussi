@@ -186,7 +186,7 @@
 
 <div class="block"><PanelCard /></div>
 
-<section class="card block">
+<div class="block"><section class="card">
   <div class="card-head">
     <h2>Live log</h2>
     <span class="spacer"></span>
@@ -199,7 +199,7 @@
       <p class="empty-log faint">Nothing logged yet</p>
     {/each}
   </div>
-</section>
+</section></div>
 
 <style>
   /* Every action in the title row, one height; Firmware, Status and Connections side by side below, then the panel and the log. */
