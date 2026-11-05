@@ -164,6 +164,9 @@ pub struct DigitalSource {
     /// The list names the apps that don't show art instead.
     #[serde(default)]
     pub exclude: bool,
+    /// Off: kept in the list but not followed.
+    #[serde(default = "on")]
+    pub enabled: bool,
 }
 
 /// A device that can't say what it plays (a turntable, a tape deck, a CD player): the display listens.
@@ -179,16 +182,23 @@ pub struct AnalogSource {
     #[serde(default = "source_attribute")]
     pub attribute: String,
     pub value: String,
+    /// Off: kept in the list but not followed.
+    #[serde(default = "on")]
+    pub enabled: bool,
 }
 
 fn source_attribute() -> String {
     "source".into()
 }
 
+fn on() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Sources {
-    /// The one that started playing last wins.
+    /// The first one playing wins; the list order is the priority.
     pub digital: Vec<DigitalSource>,
     /// The first one playing wins, over any digital source.
     pub analog: Vec<AnalogSource>,
@@ -501,6 +511,7 @@ mod tests {
         let attrs: Vec<_> = s.sources.analog.iter().map(|a| a.attribute.as_str()).collect();
         assert_eq!(attrs, ["state", "source", "sound_mode"]);
         assert_eq!(s.sources.analog[2].name, "");
+        assert!(s.sources.digital[0].enabled && s.sources.analog[0].enabled); // on unless turned off
     }
 
     #[test]

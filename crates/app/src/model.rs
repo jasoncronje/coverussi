@@ -57,7 +57,7 @@ impl Player {
 
 impl AnalogSource {
     pub fn on(&self, p: &Player) -> bool {
-        if self.entity.is_empty() || p.entity != self.entity || self.value.is_empty() {
+        if !self.enabled || self.entity.is_empty() || p.entity != self.entity || self.value.is_empty() {
             return false;
         }
         if self.attribute == "state" {
@@ -519,13 +519,16 @@ impl Device {
     }
 
     /// Entities to follow in Home Assistant: digital, analog, then the idle screen's, without repeats.
+    /// Sources turned off aren't followed.
     pub fn entities(&self) -> Vec<String> {
         let mut e: Vec<String> = Vec::new();
-        let digital = self.settings.sources.digital.iter().map(|d| &d.entity);
+        let sources = &self.settings.sources;
+        let digital = sources.digital.iter().filter(|d| d.enabled).map(|d| &d.entity);
+        let analog = sources.analog.iter().filter(|a| a.enabled).map(|a| &a.entity);
         let idle = &self.settings.idle;
         let weather = (idle.show == IdleShow::Weather).then_some(&idle.weather);
         let shown = idle.entities.iter().filter(|_| idle.show == IdleShow::Entities).map(|i| &i.entity);
-        for entity in digital.chain(self.settings.sources.analog.iter().map(|a| &a.entity)).chain(weather).chain(shown) {
+        for entity in digital.chain(analog).chain(weather).chain(shown) {
             if !entity.is_empty() && !e.contains(entity) {
                 e.push(entity.clone());
             }
@@ -589,7 +592,7 @@ impl Device {
         };
         let mut best: Option<&Player> = None;
         let mut any_playing = false; // in any app, even one not on its list (a TV on Netflix)
-        for d in &self.settings.sources.digital {
+        for d in self.settings.sources.digital.iter().filter(|d| d.enabled) {
             let Some(p) = self.players.get(&d.entity) else { continue };
             any_playing |= p.playing();
             if !self.settings.app_allowed(p) {
@@ -603,8 +606,8 @@ impl Device {
             }
             // Playing beats paused, then naming a song beats "Unknown", then having a
             // picture beats none (the WiiM on its TV input plays with no song while the
-            // Apple TV has one); among equals, the one that changed last.
-            let better = best.is_none_or(|b| rank(p) > rank(b) || (rank(p) == rank(b) && p.changed > b.changed));
+            // Apple TV has one); among equals, the one higher on the list.
+            let better = best.is_none_or(|b| rank(p) > rank(b));
             if better {
                 best = Some(p);
             }
@@ -765,11 +768,11 @@ pub(crate) mod tests {
     }
 
     fn digital(entity: &str, apps: &[&str]) -> DigitalSource {
-        DigitalSource { entity: entity.into(), apps: apps.iter().map(|a| a.to_string()).collect(), exclude: false }
+        DigitalSource { entity: entity.into(), apps: apps.iter().map(|a| a.to_string()).collect(), exclude: false, enabled: true }
     }
 
     fn analog(name: &str, entity: &str, attribute: &str, value: &str) -> AnalogSource {
-        AnalogSource { name: name.into(), entity: entity.into(), attribute: attribute.into(), value: value.into() }
+        AnalogSource { name: name.into(), entity: entity.into(), attribute: attribute.into(), value: value.into(), enabled: true }
     }
 
     /// The setup these tests grew up on: a WiiM Ultra (digital) that switches to its
@@ -829,7 +832,7 @@ pub(crate) mod tests {
         assert_eq!((d.mode(), d.art()), (Mode::Digital, "/tv.jpg"));
         d.player(player("media_player.wiim_ultra_2", "playing", "Network", "/wiim.jpg"), 2000);
         d.update(2000);
-        assert_eq!(d.art(), "/wiim.jpg"); // started last
+        assert_eq!(d.art(), "/wiim.jpg"); // listed first
         d.player(player("media_player.wiim_ultra_2", "idle", "Network", ""), 3000);
         d.update(3000);
         assert_eq!(d.art(), "/tv.jpg");
@@ -1316,19 +1319,40 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn player_order_does_not_pick_the_winner() {
+    fn player_order_picks_the_winner() {
         let mut d = Device::default();
         let mut s = Settings::default();
         s.sources.digital = vec![digital("media_player.b", &[]), digital("media_player.a", &[])];
         d.set_settings(s);
-        d.player(player("media_player.a", "playing", "", "/a.jpg"), 0);
-        d.player(player("media_player.b", "playing", "", "/b.jpg"), 1000);
+        d.player(player("media_player.b", "playing", "", "/b.jpg"), 0);
+        d.player(player("media_player.a", "playing", "", "/a.jpg"), 1000);
         d.update(1000);
-        assert_eq!(d.art(), "/b.jpg");
-        d.player(player("media_player.a", "paused", "", "/a.jpg"), 2000);
-        d.player(player("media_player.a", "playing", "", "/a.jpg"), 3000);
+        assert_eq!(d.art(), "/b.jpg"); // higher on the list, though a started last
+        d.player(player("media_player.b", "paused", "", "/b.jpg"), 2000);
+        d.update(2000);
+        assert_eq!(d.art(), "/a.jpg"); // playing beats paused
+        d.player(player("media_player.b", "playing", "", "/b.jpg"), 3000);
         d.update(3000);
-        assert_eq!(d.art(), "/a.jpg");
+        assert_eq!(d.art(), "/b.jpg");
+    }
+
+    #[test]
+    fn sources_turned_off_are_skipped() {
+        let mut d = Device::default();
+        let mut s = Settings::default();
+        s.sources.digital = vec![DigitalSource { enabled: false, ..digital("media_player.tv", &[]) }, digital("media_player.wiim", &[])];
+        s.sources.analog = vec![AnalogSource { enabled: false, ..analog("Turntable", "switch.turntable", "state", "on") }];
+        s.sources.listen_for_music = true;
+        d.set_settings(s);
+        assert_eq!(d.entities(), ["media_player.wiim"]);
+        d.player(player("switch.turntable", "on", "", ""), 0);
+        d.player(player("media_player.tv", "playing", "", "/tv.jpg"), 0);
+        d.update(0);
+        // Neither the turntable nor the TV counts: the room is listened to, as with nothing playing.
+        assert!(d.room());
+        d.player(player("media_player.wiim", "playing", "", "/wiim.jpg"), 1000);
+        d.update(1000);
+        assert_eq!((d.mode(), d.art()), (Mode::Digital, "/wiim.jpg"));
     }
 
     #[test]

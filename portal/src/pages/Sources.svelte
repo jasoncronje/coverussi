@@ -2,7 +2,8 @@
   // Digital sources: smart players whose art shows, each with an optional app
   // list. Analog sources: devices that can't say what they play, each with the
   // Home Assistant state that means it's playing. Each source is a row that
-  // opens to edit it.
+  // opens to edit it, with a switch to turn it off and a grip to drag it: the
+  // first one playing wins.
   import { api } from '../lib/api';
   import EntityInput from '../lib/EntityInput.svelte';
   import Icon from '../lib/Icon.svelte';
@@ -39,6 +40,50 @@
   let open = $state<Record<string, boolean>>({});
   const toggle = (key: string) => (open[key] = !open[key]);
 
+  // Reordering: drag a row by its grip, or focus the grip and use the arrow keys.
+  let list = $state<HTMLUListElement>();
+  let dragging = $state<number | null>(null);
+  function move(from: number, to: number) {
+    const count = kind === 'digital' ? sources.digital.length : sources.analog.length;
+    if (to < 0 || to >= count || to === from) return;
+    const reorder = <T,>(l: T[]) => { const c = [...l]; c.splice(to, 0, ...c.splice(from, 1)); return c; };
+    if (kind === 'digital') digital(reorder(sources.digital));
+    else {
+      // Analog rows are open by index: the open ones move with their source.
+      const wasOpen = reorder(sources.analog.map((_, i) => !!open[`a${i}`]));
+      open = Object.fromEntries(wasOpen.map((o, i) => [`a${i}`, o]));
+      analog(reorder(sources.analog));
+    }
+  }
+  function grab(e: PointerEvent, i: number) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragging = i;
+  }
+  // Swaps once the pointer passes a neighbour's middle, so rows of different heights don't flip back and forth.
+  function drag(e: PointerEvent) {
+    if (dragging === null || !list) return;
+    const rows = [...list.children] as HTMLElement[];
+    let to = dragging;
+    while (to > 0 && e.clientY < mid(rows[to - 1])) to--;
+    while (to < rows.length - 1 && e.clientY > mid(rows[to + 1])) to++;
+    if (to !== dragging) {
+      move(dragging, to);
+      dragging = to;
+    }
+  }
+  const mid = (r: HTMLElement) => { const b = r.getBoundingClientRect(); return b.top + b.height / 2; };
+  function nudge(e: KeyboardEvent, i: number) {
+    const by = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0;
+    if (!by) return;
+    e.preventDefault();
+    move(i, i + by);
+    // The grip moved with its row: keep it focused.
+    const grip = e.currentTarget as HTMLElement;
+    requestAnimationFrame(() => (list?.children[i + by]?.querySelector('.grip') as HTMLElement | null)?.focus() ?? grip.focus());
+  }
+
   // Digital
   let adding = $state<string | null>(null);  // the entity being typed, or null when not adding
   const addError = $derived(
@@ -51,7 +96,7 @@
   function add(entity = adding ?? '') {
     entity = entity.trim();
     if (!entity || !ENTITY.test(entity) || sources.digital.some((d) => d.entity === entity)) return;
-    digital([...sources.digital, { entity, apps: [] }]);
+    digital([...sources.digital, { entity, apps: [], enabled: true }]);
     adding = null;
   }
   function setApps(i: number, apps: string[], exclude: boolean) {
@@ -72,7 +117,7 @@
   }
   function addAnalog() {
     const name = sources.analog.length ? '' : 'Turntable';
-    analog([...sources.analog, { name, entity: '', attribute: 'source', value: '' }]);
+    analog([...sources.analog, { name, entity: '', attribute: 'source', value: '', enabled: true }]);
     open[`a${sources.analog.length}`] = true;
   }
   function removeAnalog(i: number) {
@@ -110,17 +155,24 @@
       {#if addError}<p class="error small">{addError}</p>{/if}
     </div>
   {/if}
-  <ul class="list">
+  <ul class="list" bind:this={list}>
     {#each sources.digital as d, i (d.entity)}
       {@const isOpen = !!open[d.entity]}
       {@const name = names[d.entity] || pretty(d.entity)}
-      <li class="source" class:open={isOpen}>
+      <li class="source" class:open={isOpen} class:off={!d.enabled} class:dragging={dragging === i}>
         <div class="summary">
+          {#if sources.digital.length > 1}
+            <button class="grip" aria-label={`Move ${name}, with the arrow keys`} title="Drag to reorder"
+              onpointerdown={(e) => grab(e, i)} onpointermove={drag} onpointerup={() => (dragging = null)} onpointercancel={() => (dragging = null)}
+              onkeydown={(e) => nudge(e, i)}><Icon name="grip" size={16} /></button>
+          {/if}
           <button class="toggle" aria-expanded={isOpen} onclick={() => toggle(d.entity)}>
             <span class="chevron"><Icon name="chevron-down" size={16} /></span>
             <span class="what"><span class="name">{name}</span><span class="sub">{d.entity}</span></span>
-            <span class="state" class:limited={d.apps.length}>{appsSummary(d)}</span>
+            <span class="state" class:limited={d.apps.length}>{d.enabled ? appsSummary(d) : 'Off'}</span>
           </button>
+          <input type="checkbox" class="switch" checked={d.enabled} aria-label={`Follow ${name}`} title={d.enabled ? 'On' : 'Off'}
+            onchange={(e) => digital(sources.digital.map((x, j) => (j === i ? { ...x, enabled: e.currentTarget.checked } : x)))} />
           <button class="remove" onclick={() => digital(sources.digital.filter((_, j) => j !== i))}
             aria-label={`Remove ${name}`} title="Remove"><Icon name="trash" size={15} /></button>
         </div>
@@ -136,21 +188,28 @@
     <span class="spacer"></span>
     <button onclick={addAnalog}><Icon name="plus" size={15} />Add source</button>
   </div>
-  <ul class="list">
+  <ul class="list" bind:this={list}>
     {#each sources.analog as a, i}
       {@const key = `a${i}`}
       {@const isOpen = !!open[key]}
       {@const error = analogError(a)}
-      <li class="source" class:open={isOpen}>
+      <li class="source" class:open={isOpen} class:off={!a.enabled} class:dragging={dragging === i}>
         <div class="summary">
+          {#if sources.analog.length > 1}
+            <button class="grip" aria-label={`Move ${a.name || 'analog source'}, with the arrow keys`} title="Drag to reorder"
+              onpointerdown={(e) => grab(e, i)} onpointermove={drag} onpointerup={() => (dragging = null)} onpointercancel={() => (dragging = null)}
+              onkeydown={(e) => nudge(e, i)}><Icon name="grip" size={16} /></button>
+          {/if}
           <button class="toggle" aria-expanded={isOpen} onclick={() => toggle(key)}>
             <span class="chevron"><Icon name="chevron-down" size={16} /></span>
             <span class="what">
               <span class="name">{a.name || 'Unnamed source'}</span>
               <span class="sub">{a.entity && a.value ? `${a.entity} · ${trigger(a)}` : 'Not set up yet'}</span>
             </span>
-            {#if error}<span class="pill negative">Incomplete</span>{/if}
+            {#if error}<span class="pill negative">Incomplete</span>{:else if !a.enabled}<span class="state">Off</span>{/if}
           </button>
+          <input type="checkbox" class="switch" checked={a.enabled} aria-label={`Follow ${a.name || 'analog source'}`} title={a.enabled ? 'On' : 'Off'}
+            onchange={(e) => setAnalog(i, { enabled: e.currentTarget.checked })} />
           <button class="remove" onclick={() => removeAnalog(i)} aria-label={`Remove ${a.name || 'analog source'}`} title="Remove">
             <Icon name="trash" size={15} /></button>
         </div>
@@ -216,6 +275,13 @@
   .sub { color: var(--muted); font-size: 13px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
   .state { flex: none; color: var(--muted); font-weight: 400; font-size: 13px; }
   .state.limited { color: var(--text); }
+  .grip { flex: none; width: 24px; height: 32px; padding: 0; justify-content: center; background: none; border: none; color: var(--faint); cursor: grab; touch-action: none; }
+  .grip:hover:not(:disabled) { background: none; color: var(--text); }
+  .dragging { background: var(--raised); }
+  .dragging .grip { cursor: grabbing; color: var(--text); }
+  /* Turned off: the row stays, faded. */
+  .off .what, .off .chevron { opacity: 0.5; }
+  .switch { flex: none; }
   .remove { flex: none; width: 32px; height: 32px; padding: 0; justify-content: center; background: none; border-color: var(--control); color: var(--muted); }
   .remove:hover:not(:disabled) { background: var(--pill-negative-bg); border-color: var(--pill-negative-bg); color: var(--pill-negative-ink); }
   .body { padding: 0 0 16px 28px; }
