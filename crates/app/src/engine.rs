@@ -1007,6 +1007,7 @@ mod tests {
             entity: "media_player.wiim".into(),
             attribute: "source".into(),
             value: "Phono In".into(),
+            enabled: true,
         }];
         e.device.set_settings(s.clone());
         let mut r = Recorder::default();

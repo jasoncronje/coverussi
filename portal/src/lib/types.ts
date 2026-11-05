@@ -88,6 +88,8 @@ export interface DigitalSource {
   apps: string[];
   /** The apps listed don't show art; every other one does. */
   exclude?: boolean;
+  /** Off: kept on the list but not followed. */
+  enabled: boolean;
 }
 
 /** A device that can't say what it plays; it plays while the entity's attribute (or "state") has this value. */
@@ -96,6 +98,8 @@ export interface AnalogSource {
   entity: string;
   attribute: string;
   value: string;
+  /** Off: kept on the list but not followed. */
+  enabled: boolean;
 }
 
 import type { Transition } from './transition';
