@@ -6,7 +6,7 @@ Open **[jasoncronje.github.io/coverussi](https://jasoncronje.github.io/coverussi
 
 1. Plug the board's **USB** port (not POWER) into the computer.
 2. **Install**, and pick the port named USB JTAG/serial debug unit. With nothing set up yet, the panel shows a pulsing amber square.
-3. Fill in your Wi-Fi, Home Assistant's address and a long-lived access token (your Home Assistant profile, Security tab). For Home Assistant entities (the panel as a light, what analog sources play), add the MQTT broker Home Assistant uses. **Send to display**. They go straight to the board over USB.
+3. Fill in your Wi-Fi, Home Assistant's address and a long-lived access token (your Home Assistant profile, Security tab). For Home Assistant entities (the panel as a light, what analog sources play), add the MQTT broker Home Assistant uses (or later, in the web app's Settings → General). **Send to display**. They go straight to the board over USB.
 
 **Check what it has** shows the web app's address. It has no password until you set one in Settings → General.
 

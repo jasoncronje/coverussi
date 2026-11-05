@@ -1,8 +1,9 @@
 //! Home Assistant entities through MQTT discovery (coverussi_app::mqtt), when
-//! USB setup gave a broker: what an analog source plays, and the panel as a light.
+//! a broker is set (USB setup or the web app): what an analog source plays, and the panel as a light.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use coverussi_app::mqtt::{self as topics, broker, discovery, panel_command, panel_state};
@@ -14,20 +15,30 @@ use crate::app::{self, Msg};
 
 enum Ev {
     Connected,
+    Disconnected,
     Received(String, Vec<u8>),
     NowPlaying(Value),
     Panel(bool, i64),
+    Stop,
 }
 
-static TX: OnceLock<Mutex<Sender<Ev>>> = OnceLock::new();
+static TX: Mutex<Option<Sender<Ev>>> = Mutex::new(None);
+static CONNECTED: AtomicBool = AtomicBool::new(false);
+/// What an analog source plays now, for a client started with a new broker.
+static PLAYING: Mutex<Option<Value>> = Mutex::new(None);
 
 fn post(e: Ev) {
-    if let Some(tx) = TX.get() {
-        let _ = tx.lock().unwrap().send(e);
+    if let Some(tx) = TX.lock().unwrap().as_ref() {
+        let _ = tx.send(e);
     }
 }
 
+pub fn connected() -> bool {
+    CONNECTED.load(Ordering::Relaxed)
+}
+
 pub fn now_playing(v: &Value) {
+    *PLAYING.lock().unwrap() = Some(v.clone()).filter(|v| !v.is_null());
     post(Ev::NowPlaying(v.clone()));
 }
 
@@ -35,7 +46,12 @@ pub fn panel(on: bool, brightness: i64) {
     post(Ev::Panel(on, brightness));
 }
 
+/// Connects to this broker, dropping the one before; "" just drops it.
 pub fn start(url: &str) {
+    if let Some(old) = TX.lock().unwrap().take() {
+        let _ = old.send(Ev::Stop);
+    }
+    CONNECTED.store(false, Ordering::Relaxed);
     if url.is_empty() {
         return;
     }
@@ -46,7 +62,7 @@ pub fn start(url: &str) {
     let device = crate::net::mac().replace(':', "");
     let t = topics::topics(&device);
     let (tx, rx) = mpsc::channel();
-    let _ = TX.set(Mutex::new(tx.clone()));
+    let tx_keep = tx.clone();
     let client_id = format!("coverussi-{device}");
     let conf = MqttClientConfiguration {
         client_id: Some(&client_id),
@@ -54,12 +70,20 @@ pub fn start(url: &str) {
         password: b.password.as_deref(),
         keep_alive_interval: Some(Duration::from_secs(30)),
         reconnect_timeout: Some(Duration::from_secs(10)),
+        // Internal RAM is scarce: buffers of 4 KB or more go to PSRAM (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL),
+        // and the task, whose stack can only be internal, runs little more than the callback below.
+        buffer_size: 4096,
+        out_buffer_size: 4096,
+        task_stack: 4096,
         lwt: Some(LwtConfiguration { topic: &t.availability, payload: b"offline", qos: QoS::AtLeastOnce, retain: true }),
         ..Default::default()
     };
     let client = EspMqttClient::new_cb(&b.url, &conf, move |event| match event.payload() {
         EventPayload::Connected(_) => {
             let _ = tx.send(Ev::Connected);
+        }
+        EventPayload::Disconnected => {
+            let _ = tx.send(Ev::Disconnected);
         }
         EventPayload::Received { topic, data, .. } => {
             let _ = tx.send(Ev::Received(topic.unwrap_or("").to_string(), data.to_vec()));
@@ -68,6 +92,7 @@ pub fn start(url: &str) {
     });
     match client {
         Ok(client) => {
+            *TX.lock().unwrap() = Some(tx_keep);
             crate::spawn_in_psram("mqtt", 6144, move || run(client, rx, device));
         }
         Err(e) => warn!("MQTT: {e}"),
@@ -80,11 +105,18 @@ fn run(mut client: EspMqttClient<'static>, rx: Receiver<Ev>, device: String) {
         let _ = client.enqueue(topic, QoS::AtLeastOnce, true, body.as_bytes());
     };
     let mut last_panel = None;
-    let mut last_playing = json!({"title": ""});
+    let mut last_playing = PLAYING.lock().unwrap().clone().unwrap_or_else(|| json!({"title": ""}));
     for e in rx {
         match e {
+            Ev::Stop => {
+                // A clean disconnect skips the last will.
+                let _ = client.publish(&t.availability, QoS::AtLeastOnce, true, b"offline");
+                return; // drops the client, which disconnects
+            }
+            Ev::Disconnected => CONNECTED.store(false, Ordering::Relaxed),
             Ev::Connected => {
                 info!("MQTT connected");
+                CONNECTED.store(true, Ordering::Relaxed);
                 let ha = app::state().settings.home_assistant.clone();
                 if ha.mqtt_discovery {
                     for (topic, config) in discovery("homeassistant", &device, &ha.name) {
