@@ -67,8 +67,9 @@ pub enum Content {
     Weather { icon: Icon, temperature: String, condition: String, time: String },
     /// (label, value) rows.
     Entities(Vec<(String, String)>),
-    /// A video app: the time, how far into the film ("1:12 / 2:28") and that many of the ring's pixels lit.
-    Film { time: String, position: String, lit: u32 },
+    /// A video app: the time ("AM"/"PM" beside it on a 12-hour clock), how far into the film
+    /// ("1:12 / 2:28", or "3:12 / 31:04" under an hour) and that many of the ring's pixels lit.
+    Film { time: String, ampm: String, position: String, lit: u32 },
 }
 
 /// The screen to show, or None to leave the panel dark.
@@ -116,24 +117,37 @@ pub fn content(idle: &Idle, ha: &HaStates, clock: Option<LocalTime>) -> Option<C
 /// The film screen for the player shown.
 pub fn film(idle: &Idle, p: Option<&Player>, clock: Option<LocalTime>) -> Content {
     let time = clock.map_or("--:--".to_string(), |c| clock_text(c.minute, idle.clock_24h));
+    let ampm = match clock {
+        Some(c) if !idle.clock_24h => if c.minute / 60 % 24 < 12 { "AM" } else { "PM" },
+        _ => "",
+    };
     let at = p.and_then(|p| p.position_now(clock.map_or(0.0, |c| c.unix as f64)));
     let duration = p.and_then(|p| p.duration).filter(|d| *d > 0.0);
+    // Under an hour, minutes and seconds; "0:31" would read as seconds.
+    let long = duration.map_or(at.unwrap_or(0.0) >= 3600.0, |d| d >= 3600.0);
+    let length = |s: f64| if long { hours(s) } else { minutes(s) };
     let position = match (at, duration) {
-        (Some(at), Some(d)) => format!("{} / {}", hours(at), hours(d)),
-        (Some(at), None) => hours(at),
+        (Some(at), Some(d)) => format!("{} / {}", length(at), length(d)),
+        (Some(at), None) => length(at),
         _ => String::new(),
     };
     let lit = match (at, duration) {
         (Some(at), Some(d)) => ((at / d).clamp(0.0, 1.0) * RING as f64) as u32,
         _ => 0,
     };
-    Content::Film { time, position, lit }
+    Content::Film { time, ampm: ampm.into(), position, lit }
 }
 
 /// Seconds as "H:MM".
 fn hours(s: f64) -> String {
     let m = s.max(0.0) as u64 / 60;
     format!("{}:{:02}", m / 60, m % 60)
+}
+
+/// Seconds as "M:SS".
+fn minutes(s: f64) -> String {
+    let s = s.max(0.0) as u64;
+    format!("{}:{:02}", s / 60, s % 60)
 }
 
 /// The border pixel `i` steps clockwise from the top middle.
@@ -211,9 +225,24 @@ pub fn draw(c: &Content) -> Box<Rgb> {
                 p.text(&fit(value, Font::Big, 1), Font::Big, 1, 2, y + 7, WHITE);
             }
         }
-        Content::Film { time, position, lit } => {
-            p.centered(time, Font::Small, 3, 19, WHITE);
-            p.centered(position, Font::Small, 1, 39, GRAY);
+        Content::Film { time, ampm, position, lit } => {
+            // AM/PM sits beside the time, on its baseline, and the two are centred together.
+            // Too wide for that ("12:58"), its letters stack: A over M.
+            let w = Font::Small.width(time, 3);
+            let beside = Font::Small.width(ampm, 1);
+            let stack = w + 2 + beside > SIZE as i32 - 8;
+            let gap = if ampm.is_empty() { 0 } else if stack { 2 + Font::Small.width("M", 1) } else { 2 + beside };
+            let x = (SIZE as i32 - w - gap) / 2;
+            p.text(time, Font::Small, 3, x, 19, WHITE);
+            if stack {
+                for (i, ch) in ampm.chars().enumerate() {
+                    p.text(&ch.to_string(), Font::Small, 1, x + w + 2, 23 + i as i32 * 6, GRAY);
+                }
+            } else {
+                p.text(ampm, Font::Small, 1, x + w + 2, 29, GRAY);
+            }
+            // Centred in the gap between the time (rows 19 to 33) and the ring (row 63).
+            p.centered(position, Font::Small, 1, 46, GRAY);
             for i in 0..RING {
                 let (x, y) = ring(i);
                 p.set(x, y, if i < *lit { ORANGE } else { DIM });
@@ -805,19 +834,31 @@ mod tests {
         let mut p = Player { state: "playing".into(), position: Some(4320.0), position_at: Some(10_000.0), ..Default::default() };
         p.duration = Some(8880.0);
         let s = idle(IdleShow::Off);
-        let Content::Film { time, position, lit } = film(&s, Some(&p), Some(clock)) else { panic!() };
+        let Content::Film { time, position, lit, .. } = film(&s, Some(&p), Some(clock)) else { panic!() };
         assert_eq!((time.as_str(), position.as_str(), lit), ("21:04", "1:13 / 2:28", 125));
         // No length: no ring; nothing known: just the time.
         p.duration = None;
-        assert_eq!(film(&s, Some(&p), Some(clock)), Content::Film { time: "21:04".into(), position: "1:13".into(), lit: 0 });
-        assert_eq!(film(&s, None, None), Content::Film { time: "--:--".into(), position: String::new(), lit: 0 });
+        assert_eq!(film(&s, Some(&p), Some(clock)), Content::Film { time: "21:04".into(), ampm: String::new(), position: "1:13".into(), lit: 0 });
+        assert_eq!(film(&s, None, None), Content::Film { time: "--:--".into(), ampm: String::new(), position: String::new(), lit: 0 });
         assert_eq!(hours(59.0 * 60.0 + 59.0), "0:59");
+        // Under an hour: minutes and seconds.
+        let short = Player { state: "paused".into(), position: Some(192.0), duration: Some(1864.0), ..Default::default() };
+        let Content::Film { position, .. } = film(&s, Some(&short), Some(clock)) else { panic!() };
+        assert_eq!(position, "3:12 / 31:04");
+        // A 12-hour clock says which half of the day.
+        let mut s12 = idle(IdleShow::Off);
+        s12.clock_24h = false;
+        let Content::Film { time, ampm, .. } = film(&s12, None, Some(clock)) else { panic!() };
+        assert_eq!((time.as_str(), ampm.as_str()), ("9:04", "PM"));
+        let morning = LocalTime { minute: 9 * 60, ..clock };
+        let Content::Film { ampm, .. } = film(&s12, None, Some(morning)) else { panic!() };
+        assert_eq!(ampm, "AM");
         // The ring goes once round the border, clockwise from the top middle.
         let all: std::collections::HashSet<_> = (0..RING).map(ring).collect();
         assert_eq!((all.len(), RING), (252, 252));
         assert_eq!((ring(0), ring(1), ring(31), ring(32), ring(94), ring(251)), ((32, 0), (33, 0), (63, 0), (63, 1), (63, 63), (31, 0)));
         assert!(all.iter().all(|&(x, y)| x == 0 || y == 0 || x == 63 || y == 63));
-        let img = draw(&Content::Film { time: "21:04".into(), position: "1:13 / 2:28".into(), lit: 2 });
+        let img = draw(&Content::Film { time: "21:04".into(), ampm: String::new(), position: "1:13 / 2:28".into(), lit: 2 });
         let px = |x: usize, y: usize| [img[(y * SIZE + x) * 3], img[(y * SIZE + x) * 3 + 1], img[(y * SIZE + x) * 3 + 2]];
         assert_eq!((px(32, 0), px(33, 0), px(34, 0)), (ORANGE, ORANGE, DIM));
         assert_eq!(px(32, 19 + 1), [0; 3]); // the colon's gap
