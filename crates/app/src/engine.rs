@@ -296,11 +296,11 @@ impl Engine {
         self.idle = None; // the idle screen comes back with a transition
     }
 
-    /// No art: the idle screen, or the film screen for a video app, redrawn when what it says changes
-    /// (the minute, a state, the film's progress).
+    /// No art: the idle screen, for a video app inside the film's progress ring, redrawn when what it
+    /// says changes (the minute, a state, the ring).
     fn show_idle(&mut self, now: Ms) {
         let content = if self.device.mode() == Mode::Film {
-            Some(idle::film(&self.device.settings.idle, self.device.source(), self.clock))
+            Some(idle::film(&self.device.settings.idle, &self.ha, self.device.source(), self.clock))
         } else {
             idle::content(&self.device.settings.idle, &self.ha, self.clock)
         };
