@@ -65,6 +65,18 @@ pub struct Display {
     pub color: Color,
     /// Turns the picture clockwise for a panel mounted on its side or upside down: 0, 90, 180 or 270.
     pub rotation: i64,
+    /// A recognised record's title and artist, between showings of its cover.
+    pub song_screen: bool,
+    pub song_cover_s: i64,
+    pub song_text_s: i64,
+    /// A record turning while one plays that isn't recognised yet; off, the idle screen.
+    pub record: bool,
+    /// 33, 45 or 78.
+    pub record_rpm: i64,
+    /// The label's colour, `#rrggbb`.
+    pub record_label: String,
+    /// The sheen brightens as the music gets louder.
+    pub record_sheen: bool,
 }
 
 /// How the panel draws colour. The web app's mirror shows the art untouched.
@@ -98,6 +110,23 @@ impl Color {
     }
 }
 
+impl Display {
+    /// One turn of the record, in ms.
+    pub fn record_turn_ms(&self) -> u64 {
+        if self.record_rpm == 33 { 1800 } else { 60_000 / self.record_rpm.max(1) as u64 }
+    }
+
+    /// The record's label colour, from `#rrggbb`.
+    pub fn record_color(&self) -> Option<[u8; 3]> {
+        let h = self.record_label.strip_prefix('#')?;
+        if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        let byte = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
+        Some([byte(0)?, byte(2)?, byte(4)?])
+    }
+}
+
 impl Default for Display {
     fn default() -> Self {
         Self {
@@ -114,6 +143,13 @@ impl Default for Display {
             time_zone: "UTC".into(),
             color: Color::default(),
             rotation: 0,
+            song_screen: true,
+            song_cover_s: 20,
+            song_text_s: 6,
+            record: true,
+            record_rpm: 33,
+            record_label: "#f2b33d".into(),
+            record_sheen: true,
         }
     }
 }
@@ -312,6 +348,14 @@ impl Settings {
         if ![0, 90, 180, 270].contains(&d.rotation) {
             return Err(Invalid(format!("display.rotation: {} isn't 0, 90, 180 or 270", d.rotation)));
         }
+        range("display.song_cover_s", d.song_cover_s, 5, 600)?;
+        range("display.song_text_s", d.song_text_s, 2, 60)?;
+        if ![33, 45, 78].contains(&d.record_rpm) {
+            return Err(Invalid(format!("display.record_rpm: {} isn't 33, 45 or 78", d.record_rpm)));
+        }
+        if d.record_color().is_none() {
+            return Err(Invalid(format!("display.record_label: {:?} isn't a colour like #f2b33d", d.record_label)));
+        }
         if posix_tz(&d.time_zone).is_none() {
             return Err(Invalid(format!(
                 "display.time_zone: unknown time zone {:?}; use an IANA name like Europe/London",
@@ -469,6 +513,17 @@ mod tests {
         assert!(parse(json!({"recognition": {"replace_after": 0}})).is_err());
         let e = parse(json!({"display": {"time_zone": "Mars/Olympus"}})).unwrap_err();
         assert!(e.0.starts_with("display.time_zone: unknown time zone"), "{e}");
+    }
+
+    #[test]
+    fn song_screen_and_record() {
+        let d = Settings::default().display;
+        assert_eq!((d.song_screen, d.song_cover_s, d.song_text_s, d.record_turn_ms(), d.record_color()), (true, 20, 6, 1800, Some([242, 179, 61])));
+        let s = parse(json!({"display": {"record_rpm": 45, "record_label": "#FF0080"}})).unwrap();
+        assert_eq!((s.display.record_turn_ms(), s.display.record_color()), (1333, Some([255, 0, 128])));
+        assert!(parse(json!({"display": {"record_rpm": 16}})).is_err());
+        assert!(parse(json!({"display": {"record_label": "amber"}})).is_err());
+        assert!(parse(json!({"display": {"song_text_s": 1}})).is_err());
     }
 
     #[test]

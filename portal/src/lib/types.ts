@@ -124,6 +124,13 @@ export interface Settings {
     side_end_dim_s: number;
     time_zone: string;
     color: PanelColor;
+    song_screen: boolean;
+    song_cover_s: number;
+    song_text_s: number;
+    record: boolean;
+    record_rpm: 33 | 45 | 78;
+    record_label: string; // #rrggbb
+    record_sheen: boolean;
   };
   sources: { digital: DigitalSource[]; analog: AnalogSource[]; listen_for_music: boolean };
   listening: {

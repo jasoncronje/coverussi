@@ -244,17 +244,16 @@ fn sweep(t: u64) -> std::ops::Range<i32> {
     at..at + 10
 }
 
-/// One turn at 33⅓ rpm.
-pub const RECORD_TURN_MS: u64 = 1800;
 const RECORD_R: f32 = 30.5;
 const LABEL_R: f32 = 10.5;
 
-/// While a record plays that isn't recognised (yet): the record turning, `t` ms
-/// in. Its sheen brightens with `loudness`, 0 to 1.
-pub fn record(t: u64, loudness: f32) -> Box<Rgb> {
+/// While a record plays that isn't recognised (yet): the record turning once
+/// every `turn_ms`, `t` ms in, its label `label`. Its sheen brightens with
+/// `loudness`, 0 to 1.
+pub fn record(t: u64, turn_ms: u64, label: [u8; 3], loudness: f32) -> Box<Rgb> {
     use std::f32::consts::{PI, TAU};
     let mut p = Canvas(Box::new([0; SIZE * SIZE * 3]));
-    let turn = (t % RECORD_TURN_MS) as f32 / RECORD_TURN_MS as f32 * TAU;
+    let turn = (t % turn_ms) as f32 / turn_ms as f32 * TAU;
     let (sin, cos) = turn.sin_cos();
     let mid = (SIZE as f32 - 1.0) / 2.0;
     let sheen_max = 30.0 + 60.0 * loudness.clamp(0.0, 1.0);
@@ -272,10 +271,10 @@ pub fn record(t: u64, loudness: f32) -> Box<Rgb> {
             let sheen = (2.0 * (dy.atan2(dx) + 0.75 * PI)).cos().max(0.0).powi(6) * sheen_max;
             let v = 16.0 + rim + sheen * groove;
             let vinyl = [v, v, v * 1.06];
-            // The label turns: two printed lines on amber.
+            // The label turns: two printed lines on its colour.
             let (u, w) = (dx * cos + dy * sin, -dx * sin + dy * cos);
             let printed = (u.abs() <= 6.0 && (2.5..=4.0).contains(&w)) || (u.abs() <= 4.0 && (-4.5..=-3.0).contains(&w));
-            let label = if printed { [255.0, 236.0, 196.0] } else { AMBER.map(f32::from) };
+            let label = if printed { [255.0, 236.0, 196.0] } else { label.map(f32::from) };
             let on_label = (LABEL_R + 0.5 - r).clamp(0.0, 1.0);
             let mut c = [0u8; 3];
             for k in 0..3 {
@@ -645,16 +644,18 @@ mod tests {
 
     #[test]
     fn record_turns() {
-        let a = record(0, 0.5);
+        let a = record(0, 1800, AMBER, 0.5);
         assert_eq!(px(&a, 0, 0), [0, 0, 0]); // the corners are off the record
         assert_eq!(px(&a, 31, 31), [0, 0, 0]); // the spindle hole
         assert_eq!(px(&a, 31, 24), AMBER); // the label
+        assert_eq!(px(&record(0, 1800, [200, 0, 0], 0.5), 31, 24), [200, 0, 0]);
         assert!(px(&a, 31, 4)[0] > 0); // the vinyl
-        assert_ne!(record(RECORD_TURN_MS / 4, 0.5), a);
-        assert_eq!(record(RECORD_TURN_MS, 0.5), a); // a whole turn
+        assert_ne!(record(450, 1800, AMBER, 0.5), a);
+        assert_eq!(record(1800, 1800, AMBER, 0.5), a); // a whole turn
+        assert_eq!(record(769, 769, AMBER, 0.5), a); // at 78
         // Louder, a brighter sheen.
         let lit = |img: &Rgb| img.iter().map(|&v| v as u32).sum::<u32>();
-        assert!(lit(&record(0, 1.0)) > lit(&record(0, 0.0)));
+        assert!(lit(&record(0, 1800, AMBER, 1.0)) > lit(&record(0, 1800, AMBER, 0.0)));
     }
 
     #[test]
