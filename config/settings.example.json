@@ -1,0 +1,25 @@
+{
+  "sources": {
+    "digital": [
+      {
+        "entity": "media_player.wiim_ultra",
+        "apps": []
+      },
+      {
+        "entity": "media_player.apple_tv",
+        "apps": [
+          "Music",
+          "Spotify"
+        ]
+      }
+    ],
+    "analog": [
+      {
+        "name": "Turntable",
+        "entity": "media_player.wiim_ultra",
+        "attribute": "source",
+        "value": "Phono"
+      }
+    ]
+  }
+}

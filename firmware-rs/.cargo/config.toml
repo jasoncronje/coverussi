@@ -1,0 +1,16 @@
+[build]
+target = "xtensa-esp32s3-espidf"
+
+[target.'cfg(target_os = "espidf")']
+linker = "ldproxy"
+runner = "espflash flash --monitor --partition-table partitions.csv"
+rustflags = ["--cfg", "espidf_time64", "-C", "link-arg=-Wl,--wrap=lwip_getaddrinfo"]
+
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[env]
+MCU = "esp32s3"
+ESP_IDF_VERSION = "v5.5.2"
+# scripts/esp32-rs.sh activates the ESP-IDF 5.5.2 install.
+ESP_IDF_TOOLS_INSTALL_DIR = "fromenv"

@@ -1,0 +1,12 @@
+[package]
+name = "signature"
+version = "0.1.0"
+edition = "2021"
+description = "The Shazam signature of a 16 kHz mono clip"
+license = "MIT"
+
+[dependencies]
+base64 = "0.23.1"
+byteorder = "1.5.0"
+chfft = "0.3.4"
+crc32fast = "1.5.4"

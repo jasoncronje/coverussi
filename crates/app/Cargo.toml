@@ -1,0 +1,12 @@
+[package]
+name = "coverussi-app"
+version = "0.1.0"
+edition = "2021"
+description = "What the board decides: recognition answers, the album lock, plays and settings"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hmac = "0.12"
+sha2 = { version = "0.10", default-features = false }

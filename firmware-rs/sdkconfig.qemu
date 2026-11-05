@@ -1,0 +1,9 @@
+# Layered over sdkconfig.defaults for Espressif's QEMU (scripts/esp32-rs.sh
+# --qemu): it has no USB Serial/JTAG, no 32 MB flash, and hangs on octal PSRAM.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=n
+CONFIG_SPIRAM_MODE_QUAD=y
+# QEMU's network card: -nic user,model=open_eth
+CONFIG_ETH_USE_OPENETH=y

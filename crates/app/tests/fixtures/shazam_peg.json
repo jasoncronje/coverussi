@@ -1,0 +1,51 @@
+{
+ "matches": [
+  {
+   "id": "569281690",
+   "offset": 44.632066406,
+   "timeskew": -0.0010769367,
+   "frequencyskew": -0.0012074709
+  }
+ ],
+ "timestamp": 1793563504828,
+ "tagid": "22F6528F-E78F-4BA2-9BD4-CDB339D1F759",
+ "track": {
+  "key": "269310",
+  "title": "Peg",
+  "subtitle": "Steely Dan",
+  "isrc": "USMC17647230",
+  "albumadamid": "1706428459",
+  "images": {
+   "coverart": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/c2/3c/54/c23c5414-20d1-7aea-f0f5-187974c58d65/23UMGIM79990.rgb.jpg/400x400cc.jpg",
+   "coverarthq": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/c2/3c/54/c23c5414-20d1-7aea-f0f5-187974c58d65/23UMGIM79990.rgb.jpg/400x400cc.jpg"
+  },
+  "sections": [
+   {
+    "type": "SONG",
+    "metadata": [
+     {
+      "title": "Album",
+      "text": "Aja"
+     },
+     {
+      "title": "Label",
+      "text": "Geffen"
+     },
+     {
+      "title": "Released",
+      "text": "1977"
+     }
+    ]
+   }
+  ],
+  "hub": {
+   "actions": [
+    {
+     "name": "apple",
+     "type": "applemusicplay",
+     "id": "1706428468"
+    }
+   ]
+  }
+ }
+}

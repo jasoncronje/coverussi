@@ -1,0 +1,115 @@
+# Builds the firmware and publishes the browser flasher to GitHub Pages, so
+# nobody needs ESP-IDF to set up a display. A v* tag also attaches the images
+# to a GitHub Release (the app image is what the web app's firmware update takes).
+name: Firmware and flasher
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths: ['firmware-rs/**', 'crates/**', 'portal/**', 'scripts/firmware_manifest.py', '.github/workflows/flasher.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.2
+      # The runner's own SDKs, emptied below: the Xtensa toolchain doesn't fit otherwise.
+      volumes:
+        - /usr/share/dotnet:/host/dotnet
+        - /usr/local/lib/android:/host/android
+        - /opt/ghc:/host/ghc
+    env:
+      # The container runs as root; rustup refuses a HOME that isn't root's.
+      HOME: /root
+    steps:
+      - name: Free disk space
+        run: rm -rf /host/dotnet/* /host/android/* /host/ghc/* && df -h /
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Web app (embedded in the firmware)
+        working-directory: portal
+        run: npm ci --no-audit --no-fund && npm run build
+      - name: Rust for the ESP32-S3
+        shell: bash
+        run: |
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          . "$HOME/.cargo/env"
+          curl -sSfL https://github.com/esp-rs/espup/releases/latest/download/espup-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/espup"
+          chmod +x "$HOME/.cargo/bin/espup"
+          cargo install ldproxy --locked
+          espup install -t esp32s3 --toolchain-version 1.97.0.0 -f "$HOME/export-esp.sh"
+      - name: Build
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          . "$HOME/.cargo/env"
+          export LIBCLANG_PATH="$(sed -n 's/^export LIBCLANG_PATH="\(.*\)"$/\1/p' "$HOME/export-esp.sh")"
+          cd firmware-rs && cargo build --release
+      - name: Collect images
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          python3 scripts/firmware_manifest.py firmware-rs/target/xtensa-esp32s3-espidf/release out/firmware --commit "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: out/firmware
+
+  pages:
+    needs: firmware
+    # Pages on a Free plan needs a public repo; until then only the firmware builds.
+    if: github.ref == 'refs/heads/main' && !github.event.repository.private
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: portal
+      - run: npm run build:flash
+        working-directory: portal
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: portal/dist-flash/firmware
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: portal/dist-flash
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  release:
+    needs: firmware
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: firmware
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" firmware/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

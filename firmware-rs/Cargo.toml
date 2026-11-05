@@ -1,0 +1,35 @@
+[package]
+name = "coverussi"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[[bin]]
+name = "coverussi"
+harness = false
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[features]
+# A build for Espressif's QEMU (scripts/esp32-rs.sh --qemu).
+qemu = []
+
+[dependencies]
+anyhow = "1"
+log = "0.4"
+esp-idf-svc = "0.53"
+serde_json = "1"
+coverussi-app = { path = "../crates/app" }
+signature = { path = "../crates/signature" }
+
+[build-dependencies]
+embuild = "0.33.7"
+
+# The board's C drivers: HUB75, the ES7210 mics and JPEG decoding.
+[[package.metadata.esp-idf-sys.extra_components]]
+component_dirs = "components"

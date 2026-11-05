@@ -1,0 +1,6 @@
+# Host crates. The firmware (`firmware-rs/`) builds on its own: it needs the
+# Xtensa toolchain from espup and its own target.
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+exclude = ["firmware-rs"]

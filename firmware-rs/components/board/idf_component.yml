@@ -1,0 +1,10 @@
+dependencies:
+  idf:
+    version: ">=5.5"
+  esphome/esp-hub75:
+    # 0.3.6 garbles the picture on this panel; Waveshare's factory image works.
+    version: "==0.3.5"
+  espressif/esp_codec_dev:
+    version: "~1.3.1"
+  espressif/esp_jpeg:
+    version: "^1.3.0"
