@@ -129,7 +129,7 @@
         <section class="card">
           <div class="card-head"><h2>Source</h2></div>
           <dl class="facts">
-            <dt>Mode</dt><dd>{t.mode === 'digital' ? 'Digital' : t.mode === 'analog' ? 'Analog' : 'Nothing playing'}</dd>
+            <dt>Mode</dt><dd>{t.mode === 'digital' ? 'Digital' : t.mode === 'analog' ? 'Analog' : t.mode === 'film' ? 'Film' : 'Nothing playing'}</dd>
             <dt>Player</dt><dd>{player || '–'}</dd>
             {#if t.app}<dt>App</dt><dd>{t.app}</dd>{/if}
             <dt>Album</dt><dd>{t.album || '–'}</dd>

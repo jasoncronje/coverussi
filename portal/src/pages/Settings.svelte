@@ -137,7 +137,7 @@
     },
     {
       id: 'digital', area: 'sources', key: 'sources', title: 'Digital sources', custom: true, fields: [],
-      tip: 'Smart players that tell Home Assistant what’s playing, like a streamer or an Apple TV. Their cover shows while they play; limit one to some apps if you like. When several play, the highest on the list shows: drag to reorder.'
+      tip: 'Smart players that tell Home Assistant what’s playing, like a streamer or an Apple TV. Their cover shows while they play; per app, pick art, the film screen (the time and how far into the film) or nothing. When several play, the highest on the list shows: drag to reorder.'
     },
     {
       id: 'analog', area: 'sources', key: 'sources', title: 'Analog sources', custom: true, fields: [],

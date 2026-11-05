@@ -144,6 +144,7 @@ pub fn local_time() -> Option<LocalTime> {
             weekday: tm.tm_wday as u32,
             day: tm.tm_mday as u32,
             month: tm.tm_mon as u32 + 1,
+            unix: t as u64,
         })
     }
 }

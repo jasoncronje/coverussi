@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use crate::settings::{AnalogSource, IdleShow, Settings};
+use crate::settings::{AnalogSource, AppShow, IdleShow, Settings};
 
 /// Monotonic milliseconds.
 pub type Ms = u64;
@@ -24,6 +24,11 @@ pub struct Player {
     /// The current app (Apple TV, Android TV...).
     pub app_name: String,
     pub app_id: String,
+    /// Seconds into the media, as of `position_at` (Unix seconds).
+    pub position: Option<f64>,
+    pub position_at: Option<f64>,
+    /// The media's length in seconds.
+    pub duration: Option<f64>,
     /// Every string attribute, for analog sources'.
     pub attributes: HashMap<String, String>,
     /// When the state last changed.
@@ -43,6 +48,17 @@ impl Player {
 
     pub fn usable(&self) -> bool {
         !matches!(self.state.as_str(), "" | "unavailable" | "unknown" | "off")
+    }
+
+    /// Seconds into the media at this Unix time: running on while it plays, held while paused.
+    pub fn position_now(&self, unix: f64) -> Option<f64> {
+        let position = self.position?;
+        let since = match self.position_at {
+            Some(at) if self.state == "playing" => (unix - at).max(0.0),
+            _ => 0.0,
+        };
+        let now = position + since;
+        Some(self.duration.filter(|d| *d > 0.0).map_or(now, |d| now.min(d)))
     }
 
     /// A string attribute ("source" falls back to the field, for players built without the map).
@@ -82,15 +98,20 @@ impl Settings {
         if night { self.display.brightness_night } else { self.display.brightness_day }
     }
 
-    /// Whether this player's current app or input may show art: on its list, or off it when the list excludes.
-    pub fn app_allowed(&self, p: &Player) -> bool {
-        let Some(d) = self.sources.digital.iter().find(|d| d.entity == p.entity) else { return true };
-        if d.apps.is_empty() {
-            return true;
-        }
+    /// What this player's current app or input shows: the list it's on, else the source's `other`.
+    pub fn app_show(&self, p: &Player) -> AppShow {
+        let Some(d) = self.sources.digital.iter().find(|d| d.entity == p.entity) else { return AppShow::Art };
         let same = |a: &str, b: &str| !b.is_empty() && a.eq_ignore_ascii_case(b);
-        let listed = d.apps.iter().any(|a| same(a, &p.app_name) || same(a, &p.app_id) || same(a, &p.source));
-        listed != d.exclude
+        let listed = |list: &[String]| list.iter().any(|a| same(a, &p.app_name) || same(a, &p.app_id) || same(a, &p.source));
+        if listed(&d.film) {
+            AppShow::Film
+        } else if listed(&d.off) {
+            AppShow::Off
+        } else if listed(&d.apps) {
+            if d.exclude { AppShow::Off } else { AppShow::Art }
+        } else {
+            d.other.unwrap_or(if d.apps.is_empty() || d.exclude { AppShow::Art } else { AppShow::Off })
+        }
     }
 }
 
@@ -110,6 +131,8 @@ pub enum Mode {
     Off,
     Digital,
     Analog,
+    /// A video app: the film screen, no art.
+    Film,
 }
 
 impl Mode {
@@ -118,6 +141,7 @@ impl Mode {
             Mode::Off => "off",
             Mode::Digital => "digital",
             Mode::Analog => "analog",
+            Mode::Film => "film",
         }
     }
 }
@@ -593,12 +617,13 @@ impl Device {
         let rank = |q: &Player| {
             (if q.playing() { 4 } else { 0 }) + (if q.has_song() { 2 } else { 0 }) + (if q.picture.is_empty() { 0 } else { 1 })
         };
-        let mut best: Option<&Player> = None;
-        let mut any_playing = false; // in any app, even one not on its list (a TV on Netflix)
+        let mut best: Option<(&Player, AppShow)> = None;
+        let mut any_playing = false; // in any app, even one that shows nothing (a TV on Netflix)
         for d in self.settings.sources.digital.iter().filter(|d| d.enabled) {
             let Some(p) = self.players.get(&d.entity) else { continue };
             any_playing |= p.playing();
-            if !self.settings.app_allowed(p) {
+            let show = self.settings.app_show(p);
+            if show == AppShow::Off {
                 continue;
             }
             let paused_recently =
@@ -610,13 +635,13 @@ impl Device {
             // Playing beats paused, then naming a song beats "Unknown", then having a
             // picture beats none (the WiiM on its TV input plays with no song while the
             // Apple TV has one); among equals, the one higher on the list.
-            let better = best.is_none_or(|b| rank(p) > rank(b));
+            let better = best.is_none_or(|(b, _)| rank(p) > rank(b));
             if better {
-                best = Some(p);
+                best = Some((p, show));
             }
         }
-        if best.is_some() {
-            return (Mode::Digital, best, None);
+        if let Some((p, show)) = best {
+            return (if show == AppShow::Film { Mode::Film } else { Mode::Digital }, Some(p), None);
         }
         // Nothing playing that Home Assistant knows of: listen to the room.
         let mode = if self.settings.sources.listen_for_music && !any_playing { Mode::Analog } else { Mode::Off };
@@ -668,7 +693,8 @@ impl Device {
             }
         }
         self.picture_missing_since = 0;
-        self.art = picture;
+        // A film shows the film screen, not its poster.
+        self.art = if self.mode == Mode::Film { String::new() } else { picture };
     }
 
     pub fn set_panel(&mut self, on: bool) {
@@ -771,7 +797,8 @@ pub(crate) mod tests {
     }
 
     fn digital(entity: &str, apps: &[&str]) -> DigitalSource {
-        DigitalSource { entity: entity.into(), apps: apps.iter().map(|a| a.to_string()).collect(), exclude: false, enabled: true }
+        let apps = apps.iter().map(|a| a.to_string()).collect();
+        DigitalSource { entity: entity.into(), apps, film: vec![], off: vec![], exclude: false, other: None, enabled: true }
     }
 
     fn analog(name: &str, entity: &str, attribute: &str, value: &str) -> AnalogSource {
@@ -888,6 +915,66 @@ pub(crate) mod tests {
         d.update(5000);
         assert_eq!(d.mode(), Mode::Digital);
         assert_eq!(d.source().unwrap().entity, "media_player.apple_tv");
+    }
+
+    #[test]
+    fn video_apps_show_the_film_screen() {
+        let mut s = Settings::default();
+        s.sources.digital = vec![DigitalSource { film: vec!["Netflix".into()], ..digital("media_player.apple_tv", &["Music"]) }];
+        let mut d = Device::default();
+        d.set_settings(s.clone());
+        let mut tv = player("media_player.apple_tv", "playing", "", "/poster.jpg");
+        tv.app_name = "netflix".into(); // any case
+        d.player(tv.clone(), 1000);
+        d.update(1000);
+        assert_eq!((d.mode(), d.art()), (Mode::Film, "")); // no poster
+        assert_eq!(d.source().unwrap().entity, "media_player.apple_tv");
+        // Older settings: an app on no list shows nothing when there's an art list...
+        tv.app_name = "YouTube".into();
+        d.player(tv.clone(), 2000);
+        d.update(2000);
+        assert_eq!(d.mode(), Mode::Off);
+        // ...and every other app can be sent to the film screen, or to art.
+        s.sources.digital[0].other = Some(AppShow::Film);
+        d.set_settings(s.clone());
+        d.update(2000);
+        assert_eq!(d.mode(), Mode::Film);
+        s.sources.digital[0].other = Some(AppShow::Art);
+        s.sources.digital[0].off = vec!["YouTube".into()];
+        d.set_settings(s.clone());
+        d.update(2000);
+        assert_eq!(d.mode(), Mode::Off);
+        tv.app_name = "Plex".into();
+        d.player(tv, 3000);
+        d.update(3000);
+        assert_eq!((d.mode(), d.art()), (Mode::Digital, "/poster.jpg"));
+    }
+
+    #[test]
+    fn older_app_lists_read_as_before() {
+        let tv = |app: &str| Player { entity: "media_player.tv".into(), app_name: app.into(), ..Default::default() };
+        let mut s = Settings::default();
+        assert_eq!(s.app_show(&tv("Netflix")), AppShow::Art); // not a source: art
+        s.sources.digital = vec![digital("media_player.tv", &[])];
+        assert_eq!(s.app_show(&tv("Netflix")), AppShow::Art);
+        s.sources.digital = vec![digital("media_player.tv", &["Music"])];
+        assert_eq!((s.app_show(&tv("Music")), s.app_show(&tv("Netflix"))), (AppShow::Art, AppShow::Off));
+        s.sources.digital[0].exclude = true;
+        assert_eq!((s.app_show(&tv("Music")), s.app_show(&tv("Netflix"))), (AppShow::Off, AppShow::Art));
+    }
+
+    #[test]
+    fn film_position_runs_while_playing() {
+        let mut p = player("media_player.apple_tv", "playing", "", "");
+        assert_eq!(p.position_now(1000.0), None);
+        (p.position, p.position_at, p.duration) = (Some(600.0), Some(1000.0), Some(3600.0));
+        assert_eq!(p.position_now(1090.0), Some(690.0));
+        assert_eq!(p.position_now(9000.0), Some(3600.0)); // never past the end
+        p.state = "paused".into();
+        assert_eq!(p.position_now(1090.0), Some(600.0));
+        p.state = "playing".into();
+        p.duration = None;
+        assert_eq!(p.position_now(1010.0), Some(610.0));
     }
 
     #[test]

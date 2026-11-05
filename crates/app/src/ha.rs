@@ -75,6 +75,10 @@ impl HaStates {
         p.album = text("media_album_name");
         p.app_name = text("app_name");
         p.app_id = text("app_id");
+        let number = |k: &str| e.attributes.get(k).and_then(Value::as_f64);
+        p.position = number("media_position");
+        p.duration = number("media_duration");
+        p.position_at = e.attributes.get("media_position_updated_at").and_then(Value::as_str).and_then(unix_time);
         p.attributes =
             e.attributes.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect();
         p
@@ -99,6 +103,38 @@ impl HaStates {
         let list = self.entities.get(entity).and_then(|e| e.attributes.get(key)).and_then(Value::as_array);
         list.into_iter().flatten().filter_map(Value::as_str).map(String::from).collect()
     }
+}
+
+/// An ISO 8601 time as Home Assistant writes it ("2026-11-04T19:23:11.123456+00:00") in Unix seconds.
+pub fn unix_time(iso: &str) -> Option<f64> {
+    let (date, time) = iso.split_once('T')?;
+    let mut d = date.splitn(3, '-').map(|n| n.parse::<i64>().ok());
+    let (y, m, day) = (d.next()??, d.next()??, d.next()??);
+    // The offset: "Z", "+HH:MM" or "-HH:MM" after the time.
+    let (clock, offset) = match time.find(['Z', '+', '-']) {
+        Some(i) => {
+            let (clock, zone) = time.split_at(i);
+            let offset = match zone.split_once(':') {
+                Some((h, mm)) => {
+                    let minutes = h[1..].parse::<i64>().ok()? * 60 + mm.parse::<i64>().ok()?;
+                    if zone.starts_with('-') { -minutes } else { minutes }
+                }
+                None => 0,
+            };
+            (clock, offset)
+        }
+        None => (time, 0),
+    };
+    let mut c = clock.splitn(3, ':');
+    let (h, min) = (c.next()?.parse::<i64>().ok()?, c.next()?.parse::<i64>().ok()?);
+    let sec = c.next().map_or(Some(0.0), |s| s.parse::<f64>().ok())?;
+    // Days since 1970-01-01 (Howard Hinnant's days_from_civil).
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * ((m + 9) % 12) + 2) / 5 + day - 1;
+    let days = era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468;
+    Some((days * 86_400 + h * 3600 + (min - offset) * 60) as f64 + sec)
 }
 
 /// An entity for the web app's autocomplete.
@@ -258,6 +294,21 @@ mod tests {
         ha.apply(&json!({"a": {"media_player.apple_tv": {"s": "playing", "a": {"app_name": "Music", "app_id": "com.apple.TVMusic"}}}}));
         let p = ha.player("media_player.apple_tv");
         assert_eq!((p.app_name.as_str(), p.app_id.as_str()), ("Music", "com.apple.TVMusic"));
+        assert_eq!((p.position, p.duration, p.position_at), (None, None, None));
+        ha.apply(&json!({"a": {"media_player.apple_tv": {"s": "playing", "a": {"app_name": "Netflix",
+            "media_position": 4320, "media_duration": 8880.5, "media_position_updated_at": "2026-11-04T19:23:11.5+00:00"}}}}));
+        let p = ha.player("media_player.apple_tv");
+        assert_eq!((p.position, p.duration, p.position_at), (Some(4320.0), Some(8880.5), Some(1_793_820_191.5)));
+    }
+
+    #[test]
+    fn reads_home_assistant_times() {
+        assert_eq!(unix_time("1970-01-01T00:00:00+00:00"), Some(0.0));
+        assert_eq!(unix_time("2026-11-04T19:23:11Z"), Some(1_793_820_191.0));
+        assert_eq!(unix_time("2026-11-04T21:23:11.25+02:00"), Some(1_793_820_191.25));
+        assert_eq!(unix_time("2026-11-04T14:23:11-05:00"), Some(1_793_820_191.0));
+        assert_eq!(unix_time("2000-02-29T00:00:00"), Some(951_782_400.0));
+        assert_eq!(unix_time("yesterday"), None);
     }
 
     #[test]

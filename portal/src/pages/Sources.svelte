@@ -5,6 +5,7 @@
   // opens to edit it, with a switch to turn it off and a grip to drag it: the
   // first one playing wins.
   import { api } from '../lib/api';
+  import { limited, showSummary } from '../lib/apps';
   import EntityInput from '../lib/EntityInput.svelte';
   import Icon from '../lib/Icon.svelte';
   import SuggestInput from '../lib/SuggestInput.svelte';
@@ -99,14 +100,9 @@
     digital([...sources.digital, { entity, apps: [], enabled: true }]);
     adding = null;
   }
-  function setApps(i: number, apps: string[], exclude: boolean) {
-    digital(sources.digital.map((d, j) => (j === i ? { ...d, apps, exclude } : d)));
+  function setSource(i: number, next: DigitalSource) {
+    digital(sources.digital.map((d, j) => (j === i ? next : d)));
   }
-  const appsSummary = (d: DigitalSource) => {
-    if (!d.apps.length) return 'All apps';
-    const names = d.apps.length <= 2 ? d.apps.join(', ') : `${d.apps.slice(0, 2).join(', ')} +${d.apps.length - 2}`;
-    return d.exclude ? `All but ${names}` : names;
-  };
 
   // Analog
   function analog(list: AnalogSource[]) {
@@ -169,7 +165,7 @@
           <button class="toggle" aria-expanded={isOpen} onclick={() => toggle(d.entity)}>
             <span class="chevron"><Icon name="chevron-down" size={16} /></span>
             <span class="what"><span class="name">{name}</span><span class="sub">{d.entity}</span></span>
-            <span class="state" class:limited={d.apps.length}>{d.enabled ? appsSummary(d) : 'Off'}</span>
+            <span class="state" class:limited={limited(d)}>{d.enabled ? showSummary(d) : 'Off'}</span>
           </button>
           <input type="checkbox" class="switch" checked={d.enabled} aria-label={`Follow ${name}`} title={d.enabled ? 'On' : 'Off'}
             onchange={(e) => digital(sources.digital.map((x, j) => (j === i ? { ...x, enabled: e.currentTarget.checked } : x)))} />
@@ -177,7 +173,7 @@
             aria-label={`Remove ${name}`} title="Remove"><Icon name="trash" size={15} /></button>
         </div>
         {#if isOpen}
-          <div class="body"><AppPicker entity={d.entity} selected={d.apps} exclude={!!d.exclude} onchange={(apps, ex) => setApps(i, apps, ex)} /></div>
+          <div class="body"><AppPicker source={d} onchange={(next) => setSource(i, next)} /></div>
         {/if}
       </li>
     {/each}

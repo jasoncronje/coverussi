@@ -1,10 +1,12 @@
 //! What the panel shows when there's no art: a clock, the weather or a few
-//! Home Assistant entities, drawn in two pixel fonts. Also the start-up screen.
+//! Home Assistant entities, drawn in two pixel fonts. Also the start-up screen
+//! and the film screen.
 
 use serde_json::Value;
 
 use crate::art::{Rgb, SIZE};
 use crate::ha::HaStates;
+use crate::model::Player;
 use crate::settings::{Idle, IdleShow};
 
 /// The local time, once the clock is set.
@@ -17,6 +19,8 @@ pub struct LocalTime {
     pub day: u32,
     /// 1 is January.
     pub month: u32,
+    /// Unix seconds.
+    pub unix: u64,
 }
 
 /// The most entities the screen fits.
@@ -30,6 +34,11 @@ const AMBER: [u8; 3] = [242, 179, 61];
 const UNLIT: [u8; 3] = [38, 38, 38];
 /// An update that failed.
 const RED: [u8; 3] = [229, 86, 111];
+/// The film screen's ring, watched and to come.
+const ORANGE: [u8; 3] = [255, 138, 31];
+const DIM: [u8; 3] = [42, 42, 42];
+/// Pixels in the 1 px border the ring runs round.
+const RING: u32 = 4 * (SIZE as u32 - 1);
 
 const DAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const MONTHS: [&str; 12] = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -58,6 +67,8 @@ pub enum Content {
     Weather { icon: Icon, temperature: String, condition: String, time: String },
     /// (label, value) rows.
     Entities(Vec<(String, String)>),
+    /// A video app: the time, how far into the film ("1:12 / 2:28") and that many of the ring's pixels lit.
+    Film { time: String, position: String, lit: u32 },
 }
 
 /// The screen to show, or None to leave the panel dark.
@@ -99,6 +110,41 @@ pub fn content(idle: &Idle, ha: &HaStates, clock: Option<LocalTime>) -> Option<C
                 })
                 .collect(),
         )),
+    }
+}
+
+/// The film screen for the player shown.
+pub fn film(idle: &Idle, p: Option<&Player>, clock: Option<LocalTime>) -> Content {
+    let time = clock.map_or("--:--".to_string(), |c| clock_text(c.minute, idle.clock_24h));
+    let at = p.and_then(|p| p.position_now(clock.map_or(0.0, |c| c.unix as f64)));
+    let duration = p.and_then(|p| p.duration).filter(|d| *d > 0.0);
+    let position = match (at, duration) {
+        (Some(at), Some(d)) => format!("{} / {}", hours(at), hours(d)),
+        (Some(at), None) => hours(at),
+        _ => String::new(),
+    };
+    let lit = match (at, duration) {
+        (Some(at), Some(d)) => ((at / d).clamp(0.0, 1.0) * RING as f64) as u32,
+        _ => 0,
+    };
+    Content::Film { time, position, lit }
+}
+
+/// Seconds as "H:MM".
+fn hours(s: f64) -> String {
+    let m = s.max(0.0) as u64 / 60;
+    format!("{}:{:02}", m / 60, m % 60)
+}
+
+/// The border pixel `i` steps clockwise from the top middle.
+fn ring(i: u32) -> (i32, i32) {
+    let (i, n) = ((i + SIZE as u32 / 2) % RING, SIZE as i32 - 1);
+    let i = i as i32;
+    match i / n {
+        0 => (i, 0),
+        1 => (n, i - n),
+        2 => (3 * n - i, n),
+        _ => (0, 4 * n - i),
     }
 }
 
@@ -163,6 +209,14 @@ pub fn draw(c: &Content) -> Box<Rgb> {
                 let y = top + i as i32 * 16;
                 p.text(&fit(label, Font::Small, 1), Font::Small, 1, 2, y, GRAY);
                 p.text(&fit(value, Font::Big, 1), Font::Big, 1, 2, y + 7, WHITE);
+            }
+        }
+        Content::Film { time, position, lit } => {
+            p.centered(time, Font::Small, 3, 19, WHITE);
+            p.centered(position, Font::Small, 1, 39, GRAY);
+            for i in 0..RING {
+                let (x, y) = ring(i);
+                p.set(x, y, if i < *lit { ORANGE } else { DIM });
             }
         }
     }
@@ -671,7 +725,7 @@ mod tests {
         assert_eq!(lit(&song("", "")), 0);
     }
 
-    const TUESDAY: LocalTime = LocalTime { minute: 14 * 60 + 5, weekday: 2, day: 3, month: 11 };
+    const TUESDAY: LocalTime = LocalTime { minute: 14 * 60 + 5, weekday: 2, day: 3, month: 11, unix: 0 };
 
     #[test]
     fn clock_and_date() {
@@ -743,5 +797,30 @@ mod tests {
         assert!(cut.starts_with("A VERY LONG") && Font::Small.width(&cut, 1) <= 60 && Font::Small.width(&cut, 1) > 55, "{cut}");
         assert_eq!(Font::Big.width("1", 1), 5);
         assert_eq!(Font::Big.width("I", 1), 3);
+    }
+
+    #[test]
+    fn film_screen() {
+        let clock = LocalTime { minute: 21 * 60 + 4, unix: 10_090, ..Default::default() };
+        let mut p = Player { state: "playing".into(), position: Some(4320.0), position_at: Some(10_000.0), ..Default::default() };
+        p.duration = Some(8880.0);
+        let s = idle(IdleShow::Off);
+        let Content::Film { time, position, lit } = film(&s, Some(&p), Some(clock)) else { panic!() };
+        assert_eq!((time.as_str(), position.as_str(), lit), ("21:04", "1:13 / 2:28", 125));
+        // No length: no ring; nothing known: just the time.
+        p.duration = None;
+        assert_eq!(film(&s, Some(&p), Some(clock)), Content::Film { time: "21:04".into(), position: "1:13".into(), lit: 0 });
+        assert_eq!(film(&s, None, None), Content::Film { time: "--:--".into(), position: String::new(), lit: 0 });
+        assert_eq!(hours(59.0 * 60.0 + 59.0), "0:59");
+        // The ring goes once round the border, clockwise from the top middle.
+        let all: std::collections::HashSet<_> = (0..RING).map(ring).collect();
+        assert_eq!((all.len(), RING), (252, 252));
+        assert_eq!((ring(0), ring(1), ring(31), ring(32), ring(94), ring(251)), ((32, 0), (33, 0), (63, 0), (63, 1), (63, 63), (31, 0)));
+        assert!(all.iter().all(|&(x, y)| x == 0 || y == 0 || x == 63 || y == 63));
+        let img = draw(&Content::Film { time: "21:04".into(), position: "1:13 / 2:28".into(), lit: 2 });
+        let px = |x: usize, y: usize| [img[(y * SIZE + x) * 3], img[(y * SIZE + x) * 3 + 1], img[(y * SIZE + x) * 3 + 2]];
+        assert_eq!((px(32, 0), px(33, 0), px(34, 0)), (ORANGE, ORANGE, DIM));
+        assert_eq!(px(32, 19 + 1), [0; 3]); // the colon's gap
+        assert!((19..34).any(|y| px(8, y) == WHITE));
     }
 }
