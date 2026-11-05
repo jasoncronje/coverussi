@@ -60,7 +60,6 @@ fn main() {
     mqtt::start(&creds.mqtt_url);
     let server = web::start().expect("web server");
     std::mem::forget(server);
-    confirm_update();
     app::run(rx, boot);
 }
 
@@ -79,17 +78,12 @@ pub fn spawn_in_psram(name: &str, stack: usize, f: impl FnOnce() + Send + 'stati
     spawned.expect(name);
 }
 
-/// Once the network is up, this build can take the next update: keep it.
-fn confirm_update() {
-    std::thread::spawn(|| {
-        while !net::up() {
-            std::thread::sleep(Duration::from_secs(1));
-        }
-        match EspOta::new().and_then(|mut o| o.mark_running_slot_valid()) {
-            Ok(()) => {}
-            Err(e) => warn!("couldn't confirm this firmware: {e}"),
-        }
-    });
+/// Once the network is up, this build can take the next update: keep it. Called
+/// from the Wi-Fi thread, since internal RAM has no room for a thread of its own.
+pub fn confirm_update() {
+    if let Err(e) = EspOta::new().and_then(|mut o| o.mark_running_slot_valid()) {
+        warn!("couldn't confirm this firmware: {e}");
+    }
 }
 
 /// Until USB setup has run: a slow amber pulse in the middle of the panel.

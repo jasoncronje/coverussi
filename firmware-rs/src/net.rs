@@ -14,6 +14,8 @@ use log::info;
 use crate::config::Credentials;
 
 static UP: AtomicBool = AtomicBool::new(false);
+/// Whether this build has been kept after its first connection.
+static CONFIRMED: AtomicBool = AtomicBool::new(false);
 
 pub fn up() -> bool {
     UP.load(Ordering::Relaxed)
@@ -53,6 +55,9 @@ pub fn start(modem: esp_idf_svc::hal::modem::Modem<'static>, sysloop: EspSystemE
                 if wifi.connect().is_ok() && wifi.wait_netif_up().is_ok() {
                     UP.store(true, Ordering::Relaxed);
                     info!("Wi-Fi connected, {}", ip());
+                    if !CONFIRMED.swap(true, Ordering::Relaxed) {
+                        crate::confirm_update();
+                    }
                 }
             }
             std::thread::sleep(Duration::from_secs(5));
@@ -70,6 +75,7 @@ pub fn start(mac: esp_idf_svc::hal::mac::MAC<'static>, sysloop: EspSystemEventLo
     eth.wait_netif_up().expect("Ethernet up");
     UP.store(true, Ordering::Relaxed);
     info!("Ethernet up, {}", ip());
+    crate::confirm_update();
     std::mem::forget(eth);
 }
 
