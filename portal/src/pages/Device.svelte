@@ -16,8 +16,6 @@
   let message = $state('');
   let error = $state('');
   let follow = $state(true);
-  // The log stays folded until asked for.
-  let logOpen = $state(false);
   let logBox = $state<HTMLDivElement>();
   let fileInput = $state<HTMLInputElement>();
 
@@ -107,7 +105,7 @@
   const rows = $derived(live.logs.map(row));
   $effect(() => {
     void rows.length;
-    if (follow && logOpen) tick().then(() => logBox && (logBox.scrollTop = logBox.scrollHeight));
+    if (follow) tick().then(() => logBox && (logBox.scrollTop = logBox.scrollHeight));
   });
 </script>
 
@@ -190,21 +188,17 @@
 
 <section class="card block">
   <div class="card-head">
-    <button class="link head" aria-expanded={logOpen} onclick={() => (logOpen = !logOpen)}>
-      <span class="chevron" class:open={logOpen}><Icon name="chevron-down" /></span><h2>Live log</h2>
-    </button>
+    <h2>Live log</h2>
     <span class="spacer"></span>
-    {#if logOpen}<label class="row muted"><input type="checkbox" bind:checked={follow} /> Follow</label>{/if}
+    <label class="row muted"><input type="checkbox" bind:checked={follow} /> Follow</label>
   </div>
-  {#if logOpen}
-    <div class="log mono" bind:this={logBox}>
-      {#each rows as r, i (i)}
-        <div class="line {r.level}"><span class="time">{r.time}</span><span class="source">{r.source}</span><span class="text">{r.text}</span></div>
-      {:else}
-        <p class="empty-log faint">Nothing logged yet</p>
-      {/each}
-    </div>
-  {/if}
+  <div class="log mono" bind:this={logBox}>
+    {#each rows as r, i (i)}
+      <div class="line {r.level}"><span class="time">{r.time}</span><span class="source">{r.source}</span><span class="text">{r.text}</span></div>
+    {:else}
+      <p class="empty-log faint">Nothing logged yet</p>
+    {/each}
+  </div>
 </section>
 
 <style>
@@ -232,10 +226,6 @@
   .fill.sweep { width: 30%; animation: sweep 1.4s ease-in-out infinite alternate; }
   @keyframes sweep { to { transform: translateX(233%); } }
 
-  .head { color: var(--text); gap: 8px; }
-  .head:hover:not(:disabled) { color: var(--text); }
-  .chevron { display: flex; transform: rotate(-90deg); transition: transform 160ms ease-out; }
-  .chevron.open { transform: none; }
 
   /* The log: time, module and text in columns, a long line wrapping inside its own column. */
   /* The rows share the box's columns, so the source column is as wide as its longest name. */
@@ -263,7 +253,7 @@
     .source { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .chevron, .fill, .switch, .switch span { transition: none; }
+    .fill, .switch, .switch span { transition: none; }
     .fill.sweep { animation: none; width: 100%; opacity: 0.5; }
   }
 </style>
