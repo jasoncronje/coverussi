@@ -42,7 +42,11 @@
 
   type Kind = 'int' | 'float' | 'text' | 'time' | 'zone' | 'bool' | 'list' | 'numlist' | 'transition' | 'speed' | 'rotation' | 'fit' | 'rpm' | 'colour';
   // tip: what it does, in a tooltip. advanced: tuning most people never touch, hidden until Show advanced is on.
-  interface Field { key: string; label: string; kind: Kind; tip?: string; min?: number; max?: number; step?: number; unit?: string; advanced?: boolean }
+  // when: shown only while it holds for the settings being edited. relabel: its label for those settings.
+  interface Field {
+    key: string; label: string; kind: Kind; tip?: string; min?: number; max?: number; step?: number; unit?: string; advanced?: boolean;
+    when?: (s: Settings) => boolean; relabel?: (s: Settings) => string;
+  }
   // key: the settings section its fields live in; several groups can share one.
   // custom: drawn by its own component instead of fields.
   interface Group { id: string; area: Area; key: keyof Settings; title: string; tip?: string; fields: Field[]; custom?: boolean }
@@ -57,10 +61,11 @@
     {
       id: 'brightness', area: 'panel', key: 'display', title: 'Brightness',
       fields: [
-        { key: 'brightness_day', label: 'Day brightness', kind: 'int', min: 0, max: 255, unit: '/ 255', tip: 'Panel brightness outside night hours. 0 is off, 255 is full.' },
-        { key: 'brightness_night', label: 'Night brightness', kind: 'int', min: 0, max: 255, unit: '/ 255', tip: 'Panel brightness from Night starts to Night ends.' },
-        { key: 'night_start', label: 'Night starts', kind: 'time', tip: 'When night brightness takes over, in the time zone under General.' },
-        { key: 'night_end', label: 'Night ends', kind: 'time', tip: 'When day brightness comes back, in the time zone under General.' }
+        { key: 'brightness_schedule', label: 'Day and night brightness', kind: 'bool', tip: 'Dims the panel at night. Turn it off to keep one brightness, or to let Home Assistant set it over MQTT, like Adaptive Lighting does.' },
+        { key: 'brightness_day', label: 'Day brightness', kind: 'int', min: 0, max: 255, unit: '/ 255', tip: 'Panel brightness outside night hours, or all day with Day and night brightness off. 0 is off, 255 is full. Home Assistant can change it until the display restarts.', relabel: (s) => s.display.brightness_schedule ? 'Day brightness' : 'Brightness' },
+        { key: 'brightness_night', label: 'Night brightness', kind: 'int', min: 0, max: 255, unit: '/ 255', tip: 'Panel brightness from Night starts to Night ends.', when: (s) => s.display.brightness_schedule },
+        { key: 'night_start', label: 'Night starts', kind: 'time', tip: 'When night brightness takes over, in the time zone under General.', when: (s) => s.display.brightness_schedule },
+        { key: 'night_end', label: 'Night ends', kind: 'time', tip: 'When day brightness comes back, in the time zone under General.', when: (s) => s.display.brightness_schedule }
       ]
     },
     {
@@ -172,7 +177,8 @@
   const ADVANCED_KEY = 'settings.advanced';
   let advanced = $state(localStorage.getItem(ADVANCED_KEY) === '1');
   $effect(() => localStorage.setItem(ADVANCED_KEY, advanced ? '1' : '0'));
-  const shown = (g: Group) => g.fields.filter((f) => advanced || !f.advanced);
+  const shown = (g: Group) => g.fields.filter((f) => (advanced || !f.advanced) && (!f.when || !draft || f.when(draft)));
+  const labelOf = (f: Field) => (f.relabel && draft ? f.relabel(draft) : f.label);
   // An area with nothing to show until Show advanced is on leaves the sidebar.
   const visibleAreas = $derived(areas.filter((a) => a.id === 'general' || a.id === 'device'
     || groups.some((g) => g.area === a.id && (g.custom || shown(g).length))));
@@ -382,7 +388,7 @@
             </div>
           {:else}
           <label class="field">
-            <span class="name">{f.label}{#if f.tip}<Tip text={f.tip} />{/if}{#if !isDefault(g, f)}<span class="changed" title="Not the default"></span>{/if}</span>
+            <span class="name">{labelOf(f)}{#if f.tip}<Tip text={f.tip} />{/if}{#if !isDefault(g, f)}<span class="changed" title="Not the default"></span>{/if}</span>
             <span class="control">
               {#if f.kind === 'bool'}
                 <input type="checkbox" class="switch" checked={value(g, f)} onchange={(e) => set(g, f, e.currentTarget.checked)} />

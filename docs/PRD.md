@@ -172,7 +172,7 @@ Settings (all with defaults; the display works before anyone opens the web app):
 
 | Group | Settings |
 | --- | --- |
-| Display | brightness (day / night), night hours and time zone (a picker, from the board's list); rotation (0, 90, 180 or 270° clockwise, for how the panel is mounted; the web app's mirror stays upright); current limit; transition and its length; pause grace; side-end dim time |
+| Display | brightness (day / night, or one brightness for Home Assistant to set over MQTT), night hours and time zone (a picker, from the board's list); rotation (0, 90, 180 or 270° clockwise, for how the panel is mounted; the web app's mirror stays upright); current limit; transition and its length; pause grace; side-end dim time |
 | Sources | digital: media players, each with an optional list of apps or inputs to include or exclude (matched against HA's `app_name`, `app_id` or `source`; empty for all). Analog: a list of named sources, each an entity and the attribute (or `state`) and value that mean it's playing. Listen for music |
 | Listening | music threshold; gap threshold and minimum gap; side-end silence; clip length; retry backoff; re-listen delay after the predicted end; mic gain |
 | Recognition | rate limit; prefer the album version; album-lock rules (matches needed to replace a lock, session timeout) |
