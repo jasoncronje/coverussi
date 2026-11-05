@@ -28,6 +28,8 @@ const GRAY: [u8; 3] = [150, 150, 150];
 const AMBER: [u8; 3] = [242, 179, 61];
 /// An unlit LED in the wordmark's style.
 const UNLIT: [u8; 3] = [38, 38, 38];
+/// An update that failed.
+const RED: [u8; 3] = [229, 86, 111];
 
 const DAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const MONTHS: [&str; 12] = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -180,25 +182,8 @@ const SWEEP_MS: u64 = 1400;
 
 /// The start-up screen `t` ms in: the wordmark, a bar sweeping until it's ready, and what it waits for.
 pub fn boot(stage: Boot, t: u64) -> Box<Rgb> {
-    let mut p = Canvas(Box::new([0; SIZE * SIZE * 3]));
-    let x = (SIZE as i32 - Font::Big.width("COVERUSSI", 1)) / 2;
-    p.text("COVER", Font::Big, 1, x, 18, AMBER);
-    p.text("USSI", Font::Big, 1, x + Font::Big.width("COVER", 1) + 1, 18, WHITE);
-    let (left, right, top) = BAR;
-    let lit = if stage == Boot::Ready {
-        left..right
-    } else {
-        // A 10-pixel segment, back and forth.
-        let span = (right - left - 10) as u64;
-        let phase = t % SWEEP_MS * 2 * span / SWEEP_MS;
-        let at = left + if phase <= span { phase } else { 2 * span - phase } as i32;
-        at..at + 10
-    };
-    for x in left..right {
-        for y in top..top + 2 {
-            p.set(x, y, if lit.contains(&x) { AMBER } else { UNLIT });
-        }
-    }
+    let mut p = wordmark();
+    p.bar(if stage == Boot::Ready { BAR.0..BAR.1 } else { sweep(t) }, AMBER);
     let label = match stage {
         Boot::WiFi => "WI-FI",
         Boot::HomeAssistant => "HOME ASSISTANT",
@@ -206,6 +191,57 @@ pub fn boot(stage: Boot, t: u64) -> Box<Rgb> {
     };
     p.centered(label, Font::Small, 1, 39, GRAY);
     p.0
+}
+
+/// Where an update from GitHub is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Update {
+    /// Asking GitHub for the release and connecting to the download.
+    Starting,
+    /// How much of the image is written, in percent.
+    Downloading(u8),
+    Restarting,
+    Failed,
+}
+
+/// The update screen `t` ms in: the wordmark, a bar that fills with the
+/// download (sweeping until it starts), and what's happening.
+pub fn update(stage: Update, t: u64) -> Box<Rgb> {
+    let mut p = wordmark();
+    let (left, right, _) = BAR;
+    let (lit, color) = match stage {
+        Update::Starting => (sweep(t), AMBER),
+        Update::Downloading(pct) => (left..left + (right - left) * pct.min(100) as i32 / 100, AMBER),
+        Update::Restarting => (left..right, AMBER),
+        Update::Failed => (left..right, RED),
+    };
+    p.bar(lit, color);
+    let label = match stage {
+        Update::Starting => "UPDATING".to_string(),
+        Update::Downloading(pct) => format!("UPDATING {}%", pct.min(100)),
+        Update::Restarting => "RESTARTING".into(),
+        Update::Failed => "UPDATE FAILED".into(),
+    };
+    p.centered(&label, Font::Small, 1, 39, if stage == Update::Failed { RED } else { GRAY });
+    p.0
+}
+
+/// "COVER" amber and "USSI" white, across the top half.
+fn wordmark() -> Canvas {
+    let mut p = Canvas(Box::new([0; SIZE * SIZE * 3]));
+    let x = (SIZE as i32 - Font::Big.width("COVERUSSI", 1)) / 2;
+    p.text("COVER", Font::Big, 1, x, 18, AMBER);
+    p.text("USSI", Font::Big, 1, x + Font::Big.width("COVER", 1) + 1, 18, WHITE);
+    p
+}
+
+/// A 10-pixel segment of the bar, back and forth.
+fn sweep(t: u64) -> std::ops::Range<i32> {
+    let (left, right, _) = BAR;
+    let span = (right - left - 10) as u64;
+    let phase = t % SWEEP_MS * 2 * span / SWEEP_MS;
+    let at = left + if phase <= span { phase } else { 2 * span - phase } as i32;
+    at..at + 10
 }
 
 /// One turn at 33⅓ rpm.
@@ -392,6 +428,16 @@ impl Canvas {
         }
     }
 
+    /// The progress bar under the wordmark, `lit` in `c` and the rest unlit.
+    fn bar(&mut self, lit: std::ops::Range<i32>, c: [u8; 3]) {
+        let (left, right, top) = BAR;
+        for x in left..right {
+            for y in top..top + 2 {
+                self.set(x, y, if lit.contains(&x) { c } else { UNLIT });
+            }
+        }
+    }
+
     fn centered(&mut self, s: &str, font: Font, scale: i32, y: i32, c: [u8; 3]) {
         let x = (SIZE as i32 - font.width(s, scale)) / 2;
         self.text(s, font, scale, x, y, c);
@@ -567,6 +613,20 @@ mod tests {
     fn lit_bar(rgb: &Rgb) -> Vec<i32> {
         let (left, right, top) = BAR;
         (left..right).filter(|&x| px(rgb, x as usize, top as usize) == AMBER).collect()
+    }
+
+    #[test]
+    fn update_fills_with_the_download() {
+        let (left, right, top) = BAR;
+        let lit = |rgb: &Rgb, c: [u8; 3]| (left..right).filter(|&x| px(rgb, x as usize, top as usize) == c).count();
+        assert_eq!(lit_bar(&update(Update::Starting, 0)), (14..24).collect::<Vec<_>>()); // sweeps like start-up
+        assert_eq!(lit(&update(Update::Downloading(0), 0), AMBER), 0);
+        assert_eq!(lit(&update(Update::Downloading(50), 0), AMBER), 18);
+        assert_eq!(lit(&update(Update::Downloading(100), 0), AMBER), 36);
+        assert_eq!(lit(&update(Update::Restarting, 0), AMBER), 36);
+        assert_eq!(lit(&update(Update::Failed, 0), RED), 36);
+        // The percentage is written out, so 41% and 42% differ.
+        assert_ne!(update(Update::Downloading(41), 0), update(Update::Downloading(42), 0));
     }
 
     #[test]

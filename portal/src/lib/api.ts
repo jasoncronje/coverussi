@@ -1,4 +1,4 @@
-import type { AppsResult, HaEntity, HaTriggers, Settings } from './types';
+import type { AppsResult, HaEntity, HaTriggers, Settings, UpdateCheck } from './types';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -58,5 +58,8 @@ export const api = {
   haEntities: (q: string, domains: string[] = []) =>
     request<{ available: boolean; entities: HaEntity[] }>(
       'GET', `/api/ha/entities?q=${encodeURIComponent(q)}&domain=${encodeURIComponent(domains.join(','))}`),
-  installFirmware: (file: Blob) => request<{ ok: boolean; size: number }>('POST', '/api/firmware', file)
+  installFirmware: (file: Blob) => request<{ ok: boolean; size: number }>('POST', '/api/firmware', file),
+  checkUpdate: () => request<UpdateCheck>('GET', '/api/update'),
+  // The board downloads and installs the latest release; progress comes over the live feed.
+  startUpdate: () => request<{ ok: boolean }>('POST', '/api/update')
 };

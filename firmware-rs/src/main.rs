@@ -12,6 +12,7 @@ mod http;
 mod live;
 mod mqtt;
 mod net;
+mod update;
 mod web;
 mod work;
 

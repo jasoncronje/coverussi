@@ -22,7 +22,7 @@ use log::{info, warn};
 use serde_json::{json, Map, Value};
 
 use crate::config::{Credentials, Store};
-use crate::{audio, board, ha, live, net, work};
+use crate::{audio, board, ha, live, net, update, work};
 
 const TICK_MS: Ms = 33;
 const FRAME_EVERY_MS: Ms = 200;
@@ -359,6 +359,34 @@ impl Starting {
     }
 }
 
+/// The update screen, over everything while an update from GitHub runs.
+#[derive(Default)]
+struct Updating {
+    compositor: Compositor,
+    frames: u64,
+    on: bool,
+}
+
+impl Updating {
+    fn tick(&mut self, t: Ms, b: &mut Board) {
+        match update::status() {
+            Some(stage) => {
+                self.on = true;
+                self.frames += 1;
+                self.compositor.show(Some(Arc::from(idle::update(stage, t))), &self.frames.to_string(), t, 0, Transition::Cut);
+                self.compositor.render(t, b.boot.get_or_insert_with(|| Box::new([0; art::SIZE * art::SIZE])));
+                b.draw();
+            }
+            None if self.on => {
+                self.on = false;
+                b.boot = None;
+                b.draw();
+            }
+            None => {}
+        }
+    }
+}
+
 /// BOOT: a press turns the panel off and on, a double press identifies what's
 /// playing (an analog source, or the room), holding 2 s shows the test pattern.
 #[derive(Default)]
@@ -403,6 +431,7 @@ pub fn run(rx: Receiver<Msg>, boot: PinDriver<'static, Input>) -> ! {
     let mut b = Board::default();
     let mut button = Button::default();
     let mut starting = Some(Starting::default());
+    let mut updating = Updating::default();
     let mut brightness_shown = -1;
     let (settings, version) = {
         let s = state();
@@ -447,7 +476,12 @@ pub fn run(rx: Receiver<Msg>, boot: PinDriver<'static, Input>) -> ! {
                 b.boot = None;
                 b.draw();
             }
-            let shown = if starting.is_some() { Starting::BRIGHTNESS as i64 } else { engine.panel().brightness };
+            updating.tick(t, &mut b);
+            let shown = if starting.is_some() || updating.on {
+                Starting::BRIGHTNESS as i64
+            } else {
+                engine.panel().brightness
+            };
             if shown != brightness_shown {
                 brightness_shown = shown;
                 board::panel_brightness(shown.clamp(0, 255) as u8);

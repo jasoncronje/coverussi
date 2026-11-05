@@ -5,6 +5,7 @@
   import PanelCard from '../lib/PanelCard.svelte';
   import { bytes, duration, signal, time } from '../lib/format';
   import { live } from '../lib/live.svelte';
+  import type { UpdateCheck } from '../lib/types';
 
   const t = $derived(live.telemetry);
   const online = $derived(live.connected);
@@ -49,6 +50,50 @@
 
   const kindClass = { log: '', event: 'event', command: 'command', recognition: 'recognition' } as const;
   const firmwareName = $derived(t.firmware ?? '–');
+
+  // GitHub's latest release, checked when the page opens and again after the board restarts into a new one.
+  let check = $state<UpdateCheck | null>(null);
+  let checkError = $state('');
+  let requesting = $state(false);
+  let updateError = $state('');
+  const progress = $derived(live.update && live.update.phase !== 'failed' ? live.update : null);
+  const progressPercent = $derived(
+    progress?.phase === 'restarting' ? 100 : progress?.phase === 'downloading' ? (progress.percent ?? 0) : 0
+  );
+  const progressText = $derived(
+    progress?.phase === 'starting' ? 'Connecting to GitHub…'
+    : progress?.phase === 'downloading' ? `Downloading ${progressPercent}%`
+    : 'Installed. Restarting; this page reconnects in about 15 s.'
+  );
+
+  async function checkForUpdate() {
+    checkError = '';
+    try {
+      check = await api.checkUpdate();
+    } catch (e) {
+      check = null;
+      checkError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  $effect(() => {
+    if (online && firmwareName !== '–') void checkForUpdate();
+  });
+
+  $effect(() => {
+    if (live.update?.phase === 'failed') updateError = live.update.error || 'unknown error';
+  });
+
+  async function startUpdate() {
+    updateError = '';
+    requesting = true;
+    try {
+      await api.startUpdate();
+    } catch (e) {
+      updateError = e instanceof Error ? e.message : String(e);
+    }
+    requesting = false;
+  }
 </script>
 
   <div class="title-row">
@@ -71,11 +116,27 @@
     <section class="card">
       <div class="card-head"><h2>Firmware</h2></div>
       <div class="version"><span class="label muted">Version</span><span class="value num">{firmwareName}</span></div>
-      <label class="button" class:disabled={uploading}>
+      {#if progress}
+        <div class="progress" role="progressbar" aria-label="Update" aria-valuemin="0" aria-valuemax="100" aria-valuenow={progressPercent}>
+          <div class="fill" class:sweep={progress.phase === 'starting'} style:width={progress.phase === 'starting' ? null : `${progressPercent}%`}></div>
+        </div>
+        <p class="muted">{progressText}</p>
+      {:else}
+        {#if check?.newer}
+          <p>Version {check.latest} is available. <a href={check.page} target="_blank" rel="noreferrer">What's new</a></p>
+          <button class="primary update" disabled={!online || requesting} onclick={startUpdate}><Icon name="download" />Update to {check.latest}</button>
+        {:else if check}
+          <p class="faint">Up to date. {check.latest} is the latest release.</p>
+        {:else if checkError}
+          <p class="faint">Couldn't check GitHub for updates: {checkError}</p>
+        {/if}
+        {#if updateError}<p class="error">Update failed: {updateError}</p>{/if}
+      {/if}
+      <label class="button" class:disabled={uploading || !!progress}>
         <Icon name="upload" />{uploading ? 'Installing…' : 'Install .bin'}
-        <input type="file" accept=".bin,application/octet-stream" onchange={upload} disabled={uploading} hidden />
+        <input type="file" accept=".bin,application/octet-stream" onchange={upload} disabled={uploading || !!progress} hidden />
       </label>
-      <p class="faint">The app image from a release (<span class="mono">coverussi.bin</span>). It's checked before the board restarts into it.</p>
+      <p class="faint">Or the app image from a release (<span class="mono">coverussi.bin</span>). It's checked before the board restarts into it.</p>
     </section>
 
     <section class="card">
@@ -129,7 +190,11 @@
   .version { display: flex; flex-direction: column; gap: 4px; }
   .version .label { font-size: 13px; line-height: 18px; }
   .version .value { font-size: var(--fs-kpi); line-height: 30px; font-weight: 500; }
-  .cards label.button { align-self: flex-start; }
+  .cards label.button, .update { align-self: flex-start; }
+  .progress { height: 6px; border-radius: 999px; background: var(--raised); overflow: hidden; }
+  .fill { height: 100%; border-radius: inherit; background: var(--accent); transition: width 300ms ease-out; }
+  .fill.sweep { width: 30%; animation: sweep 1.4s ease-in-out infinite alternate; }
+  @keyframes sweep { to { transform: translateX(233%); } }
   .head { color: var(--text); gap: 8px; }
   .head:hover:not(:disabled) { color: var(--text); }
   .chevron { display: flex; transform: rotate(-90deg); transition: transform 160ms ease-out; }
@@ -149,5 +214,8 @@
     .cards { grid-template-columns: 1fr; }
     .log { height: 360px; }
   }
-  @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .chevron, .fill { transition: none; }
+    .fill.sweep { animation: none; width: 100%; opacity: 0.5; }
+  }
 </style>

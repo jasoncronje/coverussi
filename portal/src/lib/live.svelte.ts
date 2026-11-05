@@ -1,7 +1,7 @@
 // The display's live feed (/api/live): telemetry, panel frames, mic levels,
 // recognitions, the recent songs and logs, kept here for every page to read.
 import { api } from './api';
-import type { Answer, NowPlaying, Settings, Song, Telemetry } from './types';
+import type { Answer, NowPlaying, Settings, Song, Telemetry, UpdateStatus } from './types';
 
 export interface Level {
   at: number; // ms, Date.now()
@@ -35,6 +35,7 @@ class Live {
   settings = $state<Settings | null>(null);
   defaults = $state<Settings | null>(null);
   settingsVersion = $state(0);
+  update = $state<UpdateStatus | null>(null);
   now = $state(Date.now());
 
   // Frames and levels change ten times a second: plain values plus a counter to redraw on.
@@ -139,6 +140,7 @@ class Live {
         this.haUrl = m.ha_url ?? '';
         this.recent = m.recent ?? [];
         this.rateLimit(m.rate_limit_wait_ms ?? 0);
+        this.update = m.update ?? null;
         if (m.settings_version !== this.settingsVersion) void this.loadSettings();
         break;
       case 'telemetry':
@@ -171,6 +173,9 @@ class Live {
         break;
       case 'log':
         this.log('log', m.line);
+        break;
+      case 'update':
+        this.update = m.data ?? null;
         break;
       case 'settings':
         if (m.version !== this.settingsVersion) void this.loadSettings();

@@ -182,3 +182,19 @@ export interface HaEntity {
   name: string;
   state: string;
 }
+
+/** The latest GitHub release against the board's firmware. */
+export interface UpdateCheck {
+  current: string;
+  latest: string;
+  newer: boolean;
+  page: string;
+  size: number;
+}
+
+/** An update from GitHub as it runs. */
+export interface UpdateStatus {
+  phase: 'starting' | 'downloading' | 'restarting' | 'failed';
+  percent?: number;
+  error?: string;
+}
