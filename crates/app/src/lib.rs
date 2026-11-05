@@ -18,6 +18,7 @@ pub mod settings;
 pub mod shazam;
 pub mod throttle;
 pub mod tz;
+pub mod version;
 pub mod ws;
 mod zones;
 

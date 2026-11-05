@@ -17,7 +17,7 @@ use log::info;
 use serde_json::{json, Value};
 
 use crate::app::{self, Msg};
-use crate::{ha, live, net, work};
+use crate::{ha, live, net, update, work};
 
 include!(concat!(env!("OUT_DIR"), "/assets.rs"));
 
@@ -156,6 +156,7 @@ fn snapshot() -> Value {
         "now_playing": s.now_playing,
         "recent": s.recent,
         "rate_limit_wait_ms": work::rate_limit_wait_ms(),
+        "update": update::describe(),
         // Streamed covers are paths on Home Assistant; the Apple TV app needs its address.
         "ha_url": app::shared().creds.ha_url,
     })
@@ -401,6 +402,22 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     })?;
 
     guarded(&mut server, "/api/firmware", Method::Post, install)?;
+
+    // The latest GitHub release against this firmware.
+    guarded(&mut server, "/api/update", Method::Get, |req| match update::latest() {
+        Ok(r) => {
+            let current = update::current();
+            let newer = coverussi_app::version::newer(&r.version, &current);
+            ok(req, &json!({"current": current, "latest": r.version, "newer": newer, "page": r.page, "size": r.size}))
+        }
+        Err(e) => error(req, 502, &e),
+    })?;
+
+    // Install it: the panel and the live feed show how it goes, then the board restarts.
+    guarded(&mut server, "/api/update", Method::Post, |req| match update::start() {
+        Ok(()) => ok(req, &json!({"ok": true})),
+        Err(e) => error(req, 409, &e),
+    })?;
 
     server.ws_handler("/api/live", None, |ws| -> std::result::Result<(), sys::EspError> {
         use esp_idf_svc::http::server::ws::EspHttpWsConnection;

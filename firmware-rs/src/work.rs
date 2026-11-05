@@ -30,6 +30,8 @@ enum Job {
     /// A clip still recording: its blocks, until the sender hangs up.
     Stream { blocks: Receiver<Vec<i16>>, clip_ms: u32, source: String },
     Play(Play),
+    /// The latest GitHub release, into the other app slot.
+    Update,
 }
 
 static ART: OnceLock<SyncSender<String>> = OnceLock::new();
@@ -122,6 +124,11 @@ pub fn played(p: Play) {
     }
 }
 
+/// Queues an update from GitHub; false if the queue is full.
+pub fn update() -> bool {
+    JOBS.get().is_some_and(|tx| tx.try_send(Job::Update).is_ok())
+}
+
 fn art_loop(rx: Receiver<String>) {
     for key in rx {
         let c = &app::shared().creds;
@@ -165,6 +172,7 @@ fn job_loop(rx: Receiver<Job>) {
                 let (album, art) = song_art(&p.artist, &p.title).unwrap_or((None, None));
                 app::add_recent(|r| r.streamed(&p, album, art));
             }
+            Job::Update => crate::update::run(),
         }
     }
 }
