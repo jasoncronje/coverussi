@@ -47,6 +47,8 @@ pub enum Fit {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Display {
+    /// Off: always brightness_day, for brightness set from Home Assistant.
+    pub brightness_schedule: bool,
     pub brightness_day: i64,
     pub brightness_night: i64,
     pub night_start: String,
@@ -130,6 +132,7 @@ impl Display {
 impl Default for Display {
     fn default() -> Self {
         Self {
+            brightness_schedule: true,
             brightness_day: 160,
             brightness_night: 40,
             night_start: "22:00".into(),

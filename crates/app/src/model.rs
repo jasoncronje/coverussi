@@ -70,6 +70,9 @@ impl AnalogSource {
 impl Settings {
     /// Brightness for a local time of day (minutes after midnight).
     pub fn brightness_at(&self, local_min: u32) -> i64 {
+        if !self.display.brightness_schedule {
+            return self.display.brightness_day;
+        }
         let (start, end) = (minutes(&self.display.night_start, 22 * 60), minutes(&self.display.night_end, 7 * 60));
         let night = if start <= end {
             local_min >= start && local_min < end
@@ -822,6 +825,13 @@ pub(crate) mod tests {
         assert_eq!(s.brightness_at(23 * 60), s.display.brightness_night);
         assert_eq!(s.brightness_at(3 * 60), s.display.brightness_night);
         assert_eq!(s.brightness_at(7 * 60), s.display.brightness_day);
+    }
+
+    #[test]
+    fn no_schedule_keeps_day_brightness() {
+        let mut s = Settings::default();
+        s.display.brightness_schedule = false;
+        assert_eq!(s.brightness_at(23 * 60), s.display.brightness_day);
     }
 
     #[test]

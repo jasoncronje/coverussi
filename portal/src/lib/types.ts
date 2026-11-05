@@ -115,6 +115,7 @@ export interface PanelColor {
 
 export interface Settings {
   display: {
+    brightness_schedule: boolean;
     brightness_day: number;
     brightness_night: number;
     night_start: string;
