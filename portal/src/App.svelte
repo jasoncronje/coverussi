@@ -12,7 +12,7 @@
 
   const pages = { home: 'Home', recent: 'Recent', settings: 'Settings' } as const;
   type Page = keyof typeof pages;
-  // Links saved before a rename or move still land; the old Display page is the ESP32 area now.
+  // Links saved before a rename or move still land; the old Display page is the Controller area now.
   const moved: Record<string, string> = { now: 'home', history: 'recent', device: 'settings/device', display: 'settings/device', 'settings/listening': 'settings/general', 'settings/home_assistant': 'settings/general' };
 
   let session = $state<'checking' | 'in' | 'out'>('checking');
@@ -59,7 +59,7 @@
     return () => window.removeEventListener('hashchange', onHash);
   });
 
-  // Only a problem earns a mark in the bar, on Settings, which has the details under ESP32.
+  // Only a problem earns a mark in the bar, on Settings, which has the details under Controller.
   const problem = $derived(!live.connected ? 'Offline' : live.telemetry.ha_connected === false ? 'Home Assistant not connected' : '');
 </script>
 

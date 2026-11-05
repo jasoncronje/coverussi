@@ -1,14 +1,10 @@
 <script lang="ts">
-  // The LED panel: power, what it draws against its ceiling, and the test pattern.
-  import Icon from './Icon.svelte';
+  // The LED panel's readings: what it draws against its ceiling, and the test pattern to hold up against it.
+  // Its power and test pattern controls are in the Controller page's title row.
   import { live } from './live.svelte';
   import { testPattern } from './testPattern';
 
-  let { command }: { command: (name: string, args?: Record<string, unknown>) => void } = $props();
-
   const t = $derived(live.telemetry);
-  const online = $derived(live.connected);
-  const panelState = $derived(!online ? 'Offline' : t.panel_on === false ? 'Off' : t.test_pattern ? 'Test pattern' : 'On');
   const limitMa = $derived(live.settings?.display.current_limit_ma ?? 3000);
   const held = $derived(t.requested_brightness !== undefined && t.brightness !== undefined && t.requested_brightness > t.brightness);
   // What the test pattern should look like, to hold up against the panel.
@@ -19,11 +15,7 @@
 </script>
 
 <section class="card">
-  <div class="card-head"><h2>Panel</h2><span class="spacer"></span>
-    <span class="muted">{panelState}</span>
-    <button class="switch" role="switch" aria-checked={t.panel_on !== false} aria-label="Panel power"
-      disabled={!online} onclick={() => command('panel', { on: t.panel_on === false })}><span></span></button>
-  </div>
+  <div class="card-head"><h2>Panel</h2></div>
   <div class="gauges">
     <div class="gauge">
       <span class="label">Brightness</span>
@@ -41,14 +33,10 @@
     </div>
   </div>
   {#if held}<p class="note warning-ink">Held at {t.brightness} by the current limit; asked {t.requested_brightness}.</p>{/if}
-  <div class="row">
-    <button class="quiet" aria-pressed={Boolean(t.test_pattern)} disabled={!online || t.panel_on === false}
-      onclick={() => command('test_pattern', { on: !t.test_pattern })}><Icon name={t.test_pattern ? 'x' : 'grid'} />{t.test_pattern ? 'Stop test pattern' : 'Test pattern'}</button>
-  </div>
   {#if t.test_pattern}
     <div class="pattern">
       <canvas width="64" height="64" use:drawPattern aria-label="The test pattern as the panel should show it"></canvas>
-      <p class="muted">The panel should look like this: red top left, green top right, blue bottom left, white bottom right.</p>
+      <p class="muted">Should match the panel</p>
     </div>
   {/if}
 </section>
@@ -69,17 +57,8 @@
   .note { font-size: 13px; line-height: 18px; margin-top: -4px; }
   .warning-ink { color: var(--warning); }
 
-  /* Power is a state, so it's a switch: white track when on, the knob slides right. */
-  .switch { position: relative; width: 40px; height: 24px; padding: 0; border: none; border-radius: 12px; background: var(--raised); transition: background 160ms ease-out; }
-  .switch span { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform 160ms ease-out, background 160ms ease-out; }
-  .switch[aria-checked='true'] { background: var(--text); }
-  .switch[aria-checked='true'] span { transform: translateX(16px); background: var(--ground); }
-  .switch:disabled { background: var(--raised); opacity: 0.5; }
-  .switch:hover:not(:disabled) { border: none; }
-  .switch[aria-checked='true']:hover:not(:disabled) { background: #e6e6e6; }
   .pattern { display: flex; align-items: center; gap: 16px; }
   .pattern canvas { width: 128px; height: 128px; flex: none; image-rendering: pixelated; border-radius: 4px; }
   .pattern p { font-size: 13px; line-height: 18px; }
-  .quiet { height: 32px; padding: 0 14px; font-size: 13px; }
-  @media (prefers-reduced-motion: reduce) { .switch, .switch span { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .bar span { transition: none; } }
 </style>
