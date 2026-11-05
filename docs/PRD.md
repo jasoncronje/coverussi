@@ -76,7 +76,7 @@ TV box ────────────►│ media_player.tv_box       (sta
 
 - **Home Assistant:** the board subscribes to the followed entities over HA's WebSocket (`subscribe_entities`). It fetches the `entity_picture` of whatever it should show, decodes the JPEG, area-averages it to 64 × 64 and draws it with CIE 1931 gamma.
 - **Recognition:** for an analog source the board records a clip and makes the Shazam signature as it records. It asks Shazam once 5 s are in; only a miss waits for the whole clip and asks again. Then it looks up the track's length and album on iTunes, applies the album lock and fetches the art (at 128 px, the size the panel needs).
-- **MQTT** (optional, when USB setup gave a broker): Home Assistant gets a now-playing sensor and an `image` entity for analog sources, and the panel as a light.
+- **MQTT** (optional, with a broker from USB setup or Settings): Home Assistant gets a now-playing sensor and an `image` entity for analog sources, and the panel as a light.
 - **The web app** is served by the board on port 80, LAN only.
 
 ## What the matrix shows
@@ -152,6 +152,7 @@ With a password set, all of it is behind the login except the page itself and `/
 | `GET`, `PUT /api/settings` | The settings document, its defaults and version |
 | `GET /api/time_zones` | The time zone names the board knows, for the picker |
 | `POST /api/commands` | `identify`, `panel` (on, brightness), `test_pattern`, `restart`, `calibrate` (seconds), `apps` (entity) |
+| `GET`, `PUT /api/mqtt` | The MQTT broker's address, username, whether a password is stored and whether it's connected; saving reconnects |
 | `POST /api/pin` | Pin the session's album |
 | `GET`, `POST /api/corrections`, `DELETE /api/corrections/*` | Album corrections |
 | `GET /api/ha/entities` | Entity search for the Sources settings |
@@ -176,9 +177,9 @@ Settings (all with defaults; the display works before anyone opens the web app):
 | Sources | digital: media players, each with an optional list of apps or inputs to include or exclude (matched against HA's `app_name`, `app_id` or `source`; empty for all). Analog: a list of named sources, each an entity and the attribute (or `state`) and value that mean it's playing. Listen for music |
 | Listening | music threshold; gap threshold and minimum gap; side-end silence; clip length; retry backoff; re-listen delay after the predicted end; mic gain |
 | Recognition | rate limit; prefer the album version; album-lock rules (matches needed to replace a lock, session timeout) |
-| Home Assistant | MQTT discovery on/off, the device name |
+| Home Assistant | The MQTT broker (saved apart from the settings document; the password never comes back), MQTT discovery on/off, the device name |
 
-Secrets stay off the web app: Wi-Fi, the HA URL and token, and the MQTT broker go over USB, from the browser flasher or `scripts/provision.py`.
+Secrets stay off the web app: Wi-Fi and the HA URL and token go over USB, from the browser flasher or `scripts/provision.py`. The MQTT broker can go either way.
 
 ### Home Assistant entities (MQTT discovery)
 

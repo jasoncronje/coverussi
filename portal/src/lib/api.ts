@@ -58,6 +58,10 @@ export const api = {
   haEntities: (q: string, domains: string[] = []) =>
     request<{ available: boolean; entities: HaEntity[] }>(
       'GET', `/api/ha/entities?q=${encodeURIComponent(q)}&domain=${encodeURIComponent(domains.join(','))}`),
+  // The MQTT broker; the password never comes back, only whether one is stored.
+  mqtt: () => request<{ address: string; username: string; password_set: boolean; connected: boolean }>('GET', '/api/mqtt'),
+  // No password keeps the stored one; an empty address removes the broker.
+  saveMqtt: (b: { address: string; username: string; password?: string }) => request<{ ok: boolean }>('PUT', '/api/mqtt', b),
   installFirmware: (file: Blob) => request<{ ok: boolean; size: number }>('POST', '/api/firmware', file),
   checkUpdate: () => request<UpdateCheck>('GET', '/api/update'),
   // The board downloads and installs the latest release; progress comes over the live feed.

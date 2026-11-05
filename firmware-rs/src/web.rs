@@ -401,6 +401,38 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         }
     })?;
 
+    // The MQTT broker USB setup may have set. The password never leaves the board.
+    guarded(&mut server, "/api/mqtt", Method::Get, |req| {
+        let url = app::shared().store.get("mqtt_url").unwrap_or_default();
+        let b = coverussi_app::mqtt::broker(&url);
+        ok(req, &json!({
+            "address": b.as_ref().map_or("", |b| b.url.as_str()),
+            "username": b.as_ref().and_then(|b| b.username.as_deref()).unwrap_or(""),
+            "password_set": b.as_ref().is_some_and(|b| b.password.is_some()),
+            "connected": crate::mqtt::connected(),
+        }))
+    })?;
+
+    // {"address", "username", "password"}: no password keeps the one stored; "" address removes the broker.
+    guarded(&mut server, "/api/mqtt", Method::Put, |mut req| {
+        let v = json_body(&mut req).unwrap_or_default();
+        let text = |k: &str| v[k].as_str().unwrap_or("").trim().to_string();
+        let store = &app::shared().store;
+        let password = match v["password"].as_str() {
+            Some(p) => p.to_string(),
+            None => store.get("mqtt_url").as_deref().and_then(coverussi_app::mqtt::broker).and_then(|b| b.password).unwrap_or_default(),
+        };
+        let Some(url) = coverussi_app::mqtt::broker_url(&text("address"), &text("username"), &password) else {
+            return error(req, 422, "Use an address like mqtt://homeassistant.local:1883, without a username in it");
+        };
+        if !store.set("mqtt_url", url.as_bytes()) {
+            return error(req, 500, "couldn't save the broker");
+        }
+        info!("MQTT broker {}", if url.is_empty() { "removed" } else { "changed" });
+        crate::mqtt::start(&url);
+        ok(req, &json!({"ok": true}))
+    })?;
+
     guarded(&mut server, "/api/firmware", Method::Post, install)?;
 
     // The latest GitHub release against this firmware.

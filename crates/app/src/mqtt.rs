@@ -77,7 +77,7 @@ pub fn panel_state(on: bool, brightness: i64) -> Value {
     json!({"state": if on { "ON" } else { "OFF" }, "brightness": brightness})
 }
 
-/// `mqtt://user:pass@host:port`, from USB setup.
+/// `mqtt://user:pass@host:port`, from USB setup or the web app.
 pub struct Broker {
     pub url: String,
     pub username: Option<String>,
@@ -100,6 +100,27 @@ pub fn broker(url: &str) -> Option<Broker> {
     };
     let host = if host.contains(':') { host.to_string() } else { format!("{host}:1883") };
     Some(Broker { url: format!("{scheme}{host}"), username, password })
+}
+
+/// The broker as stored, from the web app's address, username and password.
+/// A bare host gets `mqtt://`; an empty address means no broker.
+pub fn broker_url(address: &str, username: &str, password: &str) -> Option<String> {
+    let address = address.trim().trim_end_matches('/');
+    if address.is_empty() {
+        return Some(String::new());
+    }
+    let address = if address.contains("://") { address.to_string() } else { format!("mqtt://{address}") };
+    let rest = address.strip_prefix("mqtt://").or_else(|| address.strip_prefix("mqtts://"))?;
+    if rest.contains('@') || username.contains(':') {
+        return None;
+    }
+    let scheme = &address[..address.len() - rest.len()];
+    let url = match (username.is_empty(), password.is_empty()) {
+        (true, true) => address.clone(),
+        (false, true) => format!("{scheme}{username}@{rest}"),
+        _ => format!("{scheme}{username}:{password}@{rest}"),
+    };
+    broker(&url).map(|_| url)
 }
 
 #[cfg(test)]
@@ -131,5 +152,15 @@ mod tests {
         let b = broker("mqtt://broker.local:1884").unwrap();
         assert_eq!((b.url.as_str(), b.username, b.password), ("mqtt://broker.local:1884", None, None));
         assert!(broker("http://x").is_none() && broker("mqtt://").is_none());
+    }
+
+    #[test]
+    fn broker_from_the_web_app() {
+        assert_eq!(broker_url("10.0.0.2", "ha", "p:w@d").as_deref(), Some("mqtt://ha:p:w@d@10.0.0.2"));
+        let b = broker(&broker_url("10.0.0.2", "ha", "p:w@d").unwrap()).unwrap();
+        assert_eq!((b.url.as_str(), b.username.as_deref(), b.password.as_deref()), ("mqtt://10.0.0.2:1883", Some("ha"), Some("p:w@d")));
+        assert_eq!(broker_url("mqtts://broker.local:8883/", "", "").as_deref(), Some("mqtts://broker.local:8883"));
+        assert_eq!(broker_url("  ", "ha", "x").as_deref(), Some(""));
+        assert!(broker_url("http://x", "", "").is_none() && broker_url("u@x", "", "").is_none() && broker_url("x", "a:b", "").is_none());
     }
 }

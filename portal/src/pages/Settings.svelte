@@ -3,6 +3,7 @@
   import Icon, { type IconName } from '../lib/Icon.svelte';
   import { live } from '../lib/live.svelte';
   import type { PanelColor, Settings } from '../lib/types';
+  import Broker from './Broker.svelte';
   import Calibrate from './Calibrate.svelte';
   import DevicePage from './Device.svelte';
   import IdleScreen from './IdleScreen.svelte';
@@ -207,8 +208,26 @@
   let passwordOn = $state(session.passwordSet);
   let newPassword = $state('');
   const passwordDirty = $derived(passwordOn !== session.passwordSet || (passwordOn && newPassword !== ''));
+  // The MQTT broker saves with the rest too; its password only when one is typed.
+  let broker = $state<{ address: string; username: string; password_set: boolean; connected: boolean } | null>(null);
+  let brokerAddress = $state('');
+  let brokerUser = $state('');
+  let brokerPassword = $state('');
+  async function loadBroker() {
+    const b = await api.mqtt();
+    broker = b;
+    brokerAddress = b.address;
+    brokerUser = b.username;
+    brokerPassword = '';
+  }
+  $effect(() => {
+    loadBroker().catch(() => {});
+  });
+  const brokerDirty = $derived(broker !== null
+    && (brokerAddress.trim() !== broker.address || brokerUser.trim() !== broker.username || brokerPassword !== ''));
+  const brokerStatus = $derived(!broker || !broker.address || brokerDirty ? '' : broker.connected ? 'Connected.' : 'Not connected.');
   const settingsDirty = $derived(draft !== null && JSON.stringify(draft) !== base);
-  const dirty = $derived(settingsDirty || passwordDirty);
+  const dirty = $derived(settingsDirty || passwordDirty || brokerDirty);
 
   function value(g: Group, f: Field): any {
     return (draft as any)[g.key][f.key];
@@ -241,6 +260,13 @@
         session.passwordSet = passwordOn;
         newPassword = '';
       }
+      if (brokerDirty) {
+        await api.saveMqtt({ address: brokerAddress, username: brokerUser, ...(brokerPassword ? { password: brokerPassword } : {}) });
+        brokerPassword = '';
+        // It reconnects now; show whether it got through once it's had a moment.
+        await loadBroker();
+        setTimeout(() => loadBroker().catch(() => {}), 3000);
+      }
       if (settingsDirty) {
         await api.saveSettings(draft);
         base = JSON.stringify(draft);
@@ -258,6 +284,11 @@
     draft = JSON.parse(base);
     passwordOn = session.passwordSet;
     newPassword = '';
+    if (broker) {
+      brokerAddress = broker.address;
+      brokerUser = broker.username;
+      brokerPassword = '';
+    }
     error = '';
   }
 
@@ -340,6 +371,10 @@
             <span class="name">{colorSummary(draft.display.color)}</span>
             <span class="control"><button onclick={() => (calibrating = true)}><Icon name="grid" />Calibrate</button></span>
           </div>
+        {/if}
+        {#if g.id === 'home_assistant' && broker}
+          <Broker bind:address={brokerAddress} bind:username={brokerUser} bind:password={brokerPassword}
+            passwordSet={broker.password_set} status={brokerStatus} />
         {/if}
         {#if g.id === 'idle'}
           <IdleScreen idle={draft.idle} onchange={(i) => { draft!.idle = i; saved = ''; }} />
