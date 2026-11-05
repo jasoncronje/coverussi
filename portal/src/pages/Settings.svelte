@@ -110,7 +110,7 @@
       ]
     },
     {
-      id: 'record', area: 'display', key: 'display', title: 'While identifying',
+      id: 'record', area: 'display', key: 'display', title: 'Unknown record',
       tip: 'A record plays that isn’t identified yet, or Shazam doesn’t know it.',
       fields: [
         { key: 'record', label: 'Turning record', kind: 'bool', tip: 'Off: the panel shows what it shows when nothing plays.' },
