@@ -166,7 +166,7 @@ With a password set, all of it is behind the login except the page itself and `/
 | **Now** | A live mirror of the panel; mode, source and track; the listener state with countdowns; a scrolling mic level graph with the music and gap thresholds; device health (Wi-Fi, HA, heap, PSRAM, uptime, current estimate) | Identify now, panel on/off, test pattern |
 | **Recent** | The last 10 songs, heard and streamed | Fix a heard song's album (a correction); the corrections list |
 | **Settings** | A sidebar of areas: General (the password, Prefer the album version), Panel, Sources, Microphone, Home Assistant and Device; an area with only advanced settings hides until Show advanced is on; changes apply on save from a bar pinned to the bottom | Save, revert, Calibrate, set or remove the password |
-| **Settings → Device** | Firmware version, IP, clock, live log; the test pattern beside a preview of how it should look | Upload a firmware image, restart |
+| **Settings → Controller** | Firmware version, IP, clock, live log; the test pattern beside a preview of how it should look | Update from GitHub, upload a firmware image, panel on and off, test pattern, restart |
 
 Settings (all with defaults; the display works before anyone opens the web app):
 

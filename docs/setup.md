@@ -10,7 +10,7 @@ Open **[jasoncronje.github.io/coverussi](https://jasoncronje.github.io/coverussi
 
 **Check what it has** shows the web app's address. It has no password until you set one in Settings → General.
 
-To update later, install again with **Erase the board first** left off, which keeps the board's settings. Or upload `coverussi.bin` from a [release](https://github.com/jasoncronje/coverussi/releases) in the web app's Settings → Device.
+To update later, install again with **Erase the board first** left off, which keeps the board's settings. Or upload `coverussi.bin` from a [release](https://github.com/jasoncronje/coverussi/releases) in the web app's Settings → Controller, or press Update there.
 
 <details>
 <summary>From a terminal instead</summary>

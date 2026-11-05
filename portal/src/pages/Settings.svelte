@@ -15,16 +15,16 @@
   import PowerSupply from './PowerSupply.svelte';
   import Segmented from '../lib/Segmented.svelte';
 
-  // area: the sidebar entry showing, from #/settings/<area>. problem: why ESP32 gets a mark.
+  // area: the sidebar entry showing, from #/settings/<area>. problem: why Controller gets a mark.
   let { area = '', problem = '' }: { area?: string; problem?: string } = $props();
 
-  // One sidebar entry per area. General's password and ESP32 draw their own; the rest are groups below.
+  // One sidebar entry per area. General's password and Controller draw their own; the rest are groups below.
   const areas = [
     { id: 'general', title: 'General', icon: 'cog' },
     { id: 'panel', title: 'Panel', icon: 'sun' },
     { id: 'display', title: 'Display', icon: 'display' },
     { id: 'sources', title: 'Sources', icon: 'music' },
-    { id: 'device', title: 'ESP32', icon: 'cpu' }
+    { id: 'device', title: 'Controller', icon: 'cpu' }
   ] as const satisfies readonly { id: string; title: string; icon: IconName }[];
   type Area = (typeof areas)[number]['id'];
 
@@ -288,7 +288,7 @@
   {/each}
 </nav>
 <div class="content">
-<h1>{current.title}</h1>
+{#if current.id !== 'device'}<h1>{current.title}</h1>{/if}
 {#if current.id === 'device'}
   <DevicePage />
 {:else if !draft}
@@ -395,7 +395,7 @@
   {/each}
 {/if}
 {#if draft && (current.id !== 'device' || dirty)}
-  <!-- Pinned to the bottom of the window. ESP32 only gets it with edits left from another area. -->
+  <!-- Pinned to the bottom of the window. Controller only gets it with edits left from another area. -->
   <div class="savebar">
     <div class="inner">
       {#if error}<p class="error">{error}</p>
@@ -423,7 +423,7 @@
   .areas .dot { margin-left: -2px; }
   .toggle { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; color: var(--muted); cursor: pointer; }
   .content { padding-bottom: 72px; }
-  /* No panels behind groups or the ESP32 page's blocks: rules between them do the separating. */
+  /* No panels behind groups or the Controller page's blocks: rules between them do the separating. */
   .content :global(.card) { background: none; border-radius: 0; padding: 0; }
   .content > h1 { margin-bottom: 20px; }
   .savebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; background: var(--ground); border-top: 1px solid var(--border); }
