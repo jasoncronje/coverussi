@@ -101,7 +101,8 @@
     const m = /^([IWEDV]) ([\w:]+): ([\s\S]*)$/.exec(l.line);
     if (!m) return { time, source: '', level: 'info', text: l.line };
     const level = m[1] === 'W' ? 'warn' : m[1] === 'E' ? 'error' : 'info';
-    return { time, source: m[2].split('::').pop() ?? m[2], level, text: m[3] };
+    const source = m[2] === 'coverussi' ? 'main' : (m[2].split('::').pop() ?? m[2]);
+    return { time, source, level, text: m[3] };
   }
   const rows = $derived(live.logs.map(row));
   $effect(() => {
@@ -237,17 +238,18 @@
   .chevron.open { transform: none; }
 
   /* The log: time, module and text in columns, a long line wrapping inside its own column. */
-  .log { max-height: 420px; overflow-y: auto; background: var(--surface); border-radius: var(--radius-inner); padding: 8px 0; font-size: 12px; line-height: 18px; }
-  .line { display: grid; grid-template-columns: 8ch 11ch minmax(0, 1fr); column-gap: 16px; padding: 2px 16px; }
+  /* The rows share the box's columns, so the source column is as wide as its longest name. */
+  .log { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-content: start; max-height: 420px; overflow-y: auto; background: var(--surface); border-radius: var(--radius-inner); padding: 10px 0; font-size: 13px; line-height: 20px; }
+  .line { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; column-gap: 20px; padding: 2px 16px; }
   .line:hover { background: #181818; }
   .time { color: var(--faint); font-variant-numeric: tabular-nums; }
-  .source { color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .text { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .source { color: var(--muted); white-space: nowrap; }
+  .text { color: var(--text); white-space: pre-wrap; overflow-wrap: break-word; min-width: 0; }
   .warn .source, .warn .text { color: var(--warning); }
   .error .source, .error .text { color: var(--negative); }
   .recognition .source { color: var(--accent); }
   .event .source, .command .source { color: var(--muted); }
-  .empty-log { padding: 2px 16px; }
+  .empty-log { grid-column: 1 / -1; padding: 2px 16px; }
 
   @media (max-width: 1100px) {
     .cards { grid-template-columns: 1fr 1fr; }
@@ -256,7 +258,8 @@
   @media (max-width: 640px) {
     .cards { grid-template-columns: 1fr; }
     .log { max-height: 360px; }
-    .line { grid-template-columns: 8ch minmax(0, 1fr); padding: 2px 12px; }
+    .log { grid-template-columns: auto minmax(0, 1fr); }
+    .line { column-gap: 12px; padding: 2px 12px; }
     .source { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {

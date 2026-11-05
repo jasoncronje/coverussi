@@ -14,6 +14,18 @@ export interface LogLine {
   line: string;
 }
 
+// An event's data in the log: its plain values as "key value", a list as its length.
+function summary(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(data)) {
+    if (Array.isArray(v)) parts.push(`${k} ${v.length}`);
+    else if (typeof v === 'number') parts.push(`${k} ${Number.isInteger(v) ? v : v.toFixed(1)}`);
+    else if (v !== null && v !== '' && typeof v !== 'object') parts.push(`${k} ${v}`);
+  }
+  return parts.length ? ` · ${parts.slice(0, 6).join(', ')}` : '';
+}
+
 export interface DeviceEvent {
   name: string;
   data: any;
@@ -163,12 +175,13 @@ class Live {
       case 'recognition': {
         const a = m.answer as Answer;
         if (a.reason === 'rate_limited') this.rateLimit(a.retry_in_ms ?? 0);
-        this.log('recognition', a.match ? `match: ${a.artist} – ${a.title} (${a.album}; ${a.reason})` : `no match: ${a.reason}`);
+        const why = String(a.reason ?? '').replaceAll('_', ' ');
+        this.log('recognition', a.match ? `${a.artist} – ${a.title} · ${a.album} · ${why}` : why === 'no match' ? 'no match' : `no match · ${why}`);
         break;
       }
       case 'event':
         if (m.name === 'analog_stopped') this.nowPlaying = null;
-        this.log('event', `${m.name}${m.data ? ' ' + JSON.stringify(m.data) : ''}`);
+        this.log('event', m.name.replaceAll('_', ' ') + summary(m.data));
         for (const fn of this.listeners) fn({ name: m.name, data: m.data });
         break;
       case 'log':
