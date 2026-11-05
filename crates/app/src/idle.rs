@@ -252,10 +252,12 @@ pub fn record(t: u64, loudness: f32) -> Box<Rgb> {
 }
 
 /// A recognised song between showings of its cover: the title, up to three
-/// lines, over the artist, up to two.
+/// lines, over the artist, up to two. A featured artist is left off the title.
 pub fn song(title: &str, artist: &str) -> Box<Rgb> {
     let mut p = Canvas(Box::new([0; SIZE * SIZE * 3]));
-    let title = wrap(title, Font::Big, 3);
+    let lower = title.to_lowercase();
+    let featuring = ["(feat", "[feat", "(ft.", "[ft.", "(with "].iter().filter_map(|m| lower.find(m)).min();
+    let title = wrap(featuring.map_or(title, |i| title[..i].trim_end()), Font::Big, 3);
     let artist = wrap(artist, Font::Small, 2);
     let gap = if title.is_empty() || artist.is_empty() { 0 } else { 4 };
     let height = title.len() as i32 * 9 - 2 + gap + artist.len() as i32 * 7 - 2;
@@ -372,8 +374,9 @@ impl Canvas {
         for ch in s.chars() {
             let (g, height) = font.glyph(ch);
             let (left, width) = g.columns(ch.to_ascii_uppercase());
-            // A small glyph in the big font sits on the baseline.
-            let top = y + (font.height() - height) as i32 * scale;
+            // A small glyph in the big font sits on the baseline; quote marks hang from the top.
+            let drop = if matches!(ch, '\'' | '"') { 0 } else { font.height() - height };
+            let top = y + drop as i32 * scale;
             for (row, bits) in g.rows.iter().enumerate() {
                 for col in 0..width {
                     if bits >> (g.cell - 1 - left - col) & 1 == 1 {
@@ -603,6 +606,7 @@ mod tests {
         assert!(long.iter().all(|l| Font::Big.width(l, 1) <= 60));
         let lit = |img: &Rgb| img.chunks(3).filter(|p| p.iter().any(|&v| v > 0)).count();
         assert!(lit(&song("Dreams", "Fleetwood Mac")) > 60);
+        assert_eq!(song("With You (feat. PARTYNEXTDOOR)", "Drake"), song("With You", "Drake"));
         assert_eq!(lit(&song("", "")), 0);
     }
 
