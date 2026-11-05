@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   // Lists a player's apps or inputs (read from Home Assistant by the device, so a
   // player added but not saved yet works) so each can show art, the film screen or nothing.
   import { api } from '../lib/api';
@@ -47,7 +48,23 @@
   });
 
   let filter = $state('');
-  const shown = $derived(filter.trim() ? apps.filter((a) => a.toLowerCase().includes(filter.trim().toLowerCase())) : apps);
+  const matches = $derived(filter.trim() ? apps.filter((a) => a.toLowerCase().includes(filter.trim().toLowerCase())) : apps);
+
+  // Apps picked to show something other than every other app go first. The split is
+  // taken when the list arrives, so a row doesn't jump away while it's being changed.
+  let picked = $state<string[]>([]);
+  $effect(() => {
+    if (result) picked = untrack(() => apps.filter((a) => appShow(source, a) !== otherShow(source)));
+  });
+  const isPicked = (app: string) => picked.some((p) => same(p, app));
+  const picks = $derived(matches.filter(isPicked));
+  const rest = $derived(matches.filter((a) => !isPicked(a)));
+  // The rest folds after a few, but the open app always shows.
+  const FOLDED = 4;
+  let unfolded = $state(false);
+  const restShown = $derived(
+    unfolded || filter.trim() ? rest : rest.filter((a, i) => i < FOLDED || same(a, current)),
+  );
 
   const status = $derived.by(() => {
     if (asking) return 'Asking Home Assistant…';
@@ -70,19 +87,27 @@
       <span class:spin={asking}><Icon name="refresh" size={15} /></span>
     </button>
   </div>
-  {#if shown.length}
-    <ul class="apps">
-      {#each shown as app (app)}
-        {@const show = appShow(source, app)}
-        <li class="app" class:on={show !== 'off'}>
-          <span class="label">{app}</span>
-          {#if same(app, current)}<span class="pill">Open</span>
-          {:else if result && !result.apps.some((a) => same(a, app))}<span class="faint small" title="This player doesn’t list it now">Not listed</span>{/if}
-          <Segmented label={`What ${app} shows`} value={show} options={SHOWS} onchange={(v) => onchange(setAppShow(source, app, v))} />
-        </li>
-      {/each}
-    </ul>
-  {:else if filter}
+  {#snippet row(app: string)}
+    {@const show = appShow(source, app)}
+    <li class="app" class:on={show !== 'off'} class:quiet={show === otherShow(source)}>
+      <span class="label">{app}</span>
+      {#if same(app, current)}<span class="pill">Open</span>
+      {:else if result && !result.apps.some((a) => same(a, app))}<span class="faint small" title="This player doesn’t list it now">Not listed</span>{/if}
+      <Segmented label={`What ${app} shows`} value={show} options={SHOWS} onchange={(v) => onchange(setAppShow(source, app, v))} />
+    </li>
+  {/snippet}
+  {#if picks.length}
+    <div class="divider">Your picks</div>
+    <ul class="apps">{#each picks as app (app)}{@render row(app)}{/each}</ul>
+  {/if}
+  {#if rest.length}
+    {#if picks.length}<div class="divider">Others</div>{/if}
+    <ul class="apps">{#each restShown as app (app)}{@render row(app)}{/each}</ul>
+    {#if restShown.length < rest.length}
+      <button class="more" onclick={() => (unfolded = true)}>Show {rest.length - restShown.length} more</button>
+    {/if}
+  {/if}
+  {#if !matches.length && filter}
     <p class="meta">No app matches “{filter}”.</p>
   {/if}
   <div class="app other on">
@@ -110,6 +135,15 @@
   .app { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 4px 0 10px; border-radius: 8px; color: var(--muted); }
   .app:hover { background: var(--raised); }
   .app.on { color: var(--text); }
+  /* Following every other app: quiet, so the picks stand out. */
+  .app.quiet { color: var(--muted); }
+  .app.quiet :global(.segmented) { background: none; border-color: transparent; opacity: 0.6; }
+  .app.quiet :global(button.on) { background: none; color: var(--muted); }
+  .app.quiet:hover :global(.segmented) { opacity: 1; border-color: var(--control); }
+  .divider { display: flex; align-items: center; gap: 10px; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
+  .divider::after { content: ''; flex: 1; border-top: 1px solid var(--rule); }
+  .more { align-self: flex-start; height: auto; padding: 2px 10px; background: none; color: var(--muted); font-size: 13px; text-decoration: underline; }
+  .more:hover { color: var(--text); }
   .other { border-top: 1px solid var(--rule); border-radius: 0; padding-top: 6px; margin-top: 2px; }
   .other:hover { background: none; }
   .other .label { font-weight: 500; }
