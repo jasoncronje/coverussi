@@ -296,9 +296,14 @@ impl Engine {
         self.idle = None; // the idle screen comes back with a transition
     }
 
-    /// No art: the idle screen, redrawn when what it says changes (the minute, a state).
+    /// No art: the idle screen, or the film screen for a video app, redrawn when what it says changes
+    /// (the minute, a state, the film's progress).
     fn show_idle(&mut self, now: Ms) {
-        let content = idle::content(&self.device.settings.idle, &self.ha, self.clock);
+        let content = if self.device.mode() == Mode::Film {
+            Some(idle::film(&self.device.settings.idle, self.device.source(), self.clock))
+        } else {
+            idle::content(&self.device.settings.idle, &self.ha, self.clock)
+        };
         if self.idle.as_ref() == Some(&content) {
             return;
         }
@@ -967,11 +972,11 @@ mod tests {
             r.last.clone().unwrap()
         };
         let mut t = 1;
-        e.set_clock(Some(LocalTime { minute: 14 * 60 + 5, weekday: 2, day: 3, month: 11 }));
+        e.set_clock(Some(LocalTime { minute: 14 * 60 + 5, weekday: 2, day: 3, month: 11, unix: 0 }));
         let clock = run(&mut e, &mut r, 30, &mut t);
         assert!(clock.iter().any(|&p| p != 0));
         // The next minute redraws it.
-        e.set_clock(Some(LocalTime { minute: 14 * 60 + 6, weekday: 2, day: 3, month: 11 }));
+        e.set_clock(Some(LocalTime { minute: 14 * 60 + 6, weekday: 2, day: 3, month: 11, unix: 0 }));
         assert_ne!(run(&mut e, &mut r, 2, &mut t)[..], clock[..]);
         // Art takes over, and the clock comes back when it goes.
         e.ha_event(&json!({"a": {"media_player.wiim_ultra_2": {"s": "playing", "a": {"source": "Network",
@@ -987,6 +992,31 @@ mod tests {
         s.idle.show = crate::settings::IdleShow::Off;
         e.settings(s, 2, t, &mut r);
         assert!(run(&mut e, &mut r, 30, &mut t).iter().all(|&p| p == 0));
+    }
+
+    #[test]
+    fn a_film_shows_the_film_screen() {
+        let (mut r, mut e) = (Recorder::default(), engine());
+        let mut s = house_settings(); // the idle screen off
+        s.sources.digital[1].film = vec!["Netflix".into()];
+        e.device.set_settings(s);
+        e.set_clock(Some(LocalTime { minute: 21 * 60, unix: 1000, ..Default::default() }));
+        e.ha_event(&json!({"a": {"media_player.apple_tv": {"s": "playing", "a": {"app_name": "Netflix",
+            "entity_picture": "/poster.jpg", "media_position": 0, "media_duration": 252,
+            "media_position_updated_at": "1970-01-01T00:16:40+00:00"}}}}), 1, &mut r);
+        let mut t = 1;
+        for _ in 0..30 {
+            t += 33;
+            e.tick(t, &mut r);
+        }
+        assert_eq!(e.telemetry(t)["mode"], "film");
+        let screen = r.last.clone().unwrap();
+        assert!(screen.iter().any(|&p| p != 0));
+        // The ring moves on as the film plays.
+        e.set_clock(Some(LocalTime { minute: 21 * 60, unix: 1100, ..Default::default() }));
+        e.tick(t + 33, &mut r);
+        e.tick(t + 66, &mut r);
+        assert_ne!(r.last.clone().unwrap()[..], screen[..]);
     }
 
     #[test]

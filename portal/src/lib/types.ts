@@ -1,4 +1,4 @@
-export type Mode = 'off' | 'digital' | 'analog';
+export type Mode = 'off' | 'digital' | 'analog' | 'film';
 export type ListenerState = 'quiet' | 'listening' | 'playing';
 
 export interface Telemetry {
@@ -82,12 +82,20 @@ export interface Song {
   shazam_album?: string | null; // what a correction is keyed on
 }
 
-/** A smart player that tells Home Assistant what it plays; apps limits it to those apps or inputs. */
+/** What a digital source's app shows: its art, the film screen, or nothing. */
+export type AppShow = 'art' | 'film' | 'off';
+
+/** A smart player that tells Home Assistant what it plays; each app or input can show art, the film screen or nothing. */
 export interface DigitalSource {
   entity: string;
+  /** Apps that show art. */
   apps: string[];
-  /** The apps listed don't show art; every other one does. */
+  film?: string[];
+  off?: string[];
+  /** Older settings: the apps listed don't show art; every other one does. */
   exclude?: boolean;
+  /** Apps on no list; missing in older settings (see otherShow). */
+  other?: AppShow;
   /** Off: kept on the list but not followed. */
   enabled: boolean;
 }

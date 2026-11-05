@@ -161,15 +161,33 @@ impl Default for Display {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DigitalSource {
     pub entity: String,
-    /// Apps or inputs (HA's app_name, app_id or source) that show art; empty: all of them.
+    /// Apps or inputs (HA's app_name, app_id or source) that show art.
     #[serde(default)]
     pub apps: Vec<String>,
-    /// The list names the apps that don't show art instead.
+    /// Apps that show the film screen (Netflix on an Apple TV).
+    #[serde(default)]
+    pub film: Vec<String>,
+    /// Apps that show nothing, the player ignored.
+    #[serde(default)]
+    pub off: Vec<String>,
+    /// Older settings: `apps` names the apps that don't show art instead.
     #[serde(default)]
     pub exclude: bool,
+    /// Apps on no list; None (older settings): art when `apps` is empty or excludes, else nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other: Option<AppShow>,
     /// Off: kept in the list but not followed.
     #[serde(default = "on")]
     pub enabled: bool,
+}
+
+/// What a digital source's app shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppShow {
+    Art,
+    Film,
+    Off,
 }
 
 /// A device that can't say what it plays (a turntable, a tape deck, a CD player): the display listens.
@@ -482,7 +500,19 @@ mod tests {
         assert_eq!(s.display.transition, Transition::FadeBlack);
         assert_eq!(s.display.brightness_night, 40);
         assert_eq!(s.sources.digital[1].apps, ["Music", "Spotify"]);
+        assert!(s.sources.digital[1].film.is_empty() && s.sources.digital[1].other.is_none());
         assert_eq!(s.listening.music_threshold_db, -41.0);
+    }
+
+    #[test]
+    fn apps_can_show_the_film_screen() {
+        let s = parse(json!({"sources": {"digital": [
+            {"entity": "media_player.apple_tv", "apps": ["Music"], "film": ["Netflix"], "off": ["YouTube"], "other": "film"}
+        ]}}))
+        .unwrap();
+        let d = &s.sources.digital[0];
+        assert_eq!((d.film.as_slice(), d.off.as_slice(), d.other), (&["Netflix".to_string()][..], &["YouTube".to_string()][..], Some(AppShow::Film)));
+        assert_eq!(parse(serde_json::to_value(&s).unwrap()).unwrap(), s);
     }
 
     #[test]
