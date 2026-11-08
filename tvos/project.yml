@@ -1,0 +1,23 @@
+name: Coverussi
+options:
+  bundleIdPrefix: io.cronje
+  deploymentTarget:
+    tvOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Coverussi:
+    type: application
+    platform: tvOS
+    sources: [Coverussi]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.cronje.coverussi.tv
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Coverussi/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Coverussi
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIUserInterfaceStyle: Dark
