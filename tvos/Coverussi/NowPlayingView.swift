@@ -6,20 +6,19 @@ struct NowPlayingView: View {
     /// The cover on screen. A new one replaces it only once it has loaded, so tracks change without a flash.
     @State private var cover: UIImage?
     @State private var loading = false
-    @State private var artist: Artist?
-    @State private var showArtist = false
+    /// The artist page, while it's open.
+    @State private var artistPage: ArtistRequest?
 
     var body: some View {
         ZStack {
             Backdrop(cover: cover)
             if let s = board.showing {
-                Playing(showing: s, cover: cover, loading: loading, artist: showArtist ? artist : nil,
-                        hasArtist: artist != nil)
+                Playing(showing: s, cover: cover, loading: loading)
                     .transition(.opacity)
-                    // Select on the remote turns the artist's page on and off.
+                    // Select on the remote opens the artist's page.
                     .focusable()
                     .onTapGesture {
-                        if artist != nil { showArtist.toggle() }
+                        if !s.artist.isEmpty { artistPage = ArtistRequest(name: s.artist) }
                     }
             } else {
                 Idle(problem: board.problem, connected: board.connected, onSettings: onSettings)
@@ -30,17 +29,16 @@ struct NowPlayingView: View {
         .ignoresSafeArea()
         // Play/Pause on the remote opens the settings while something plays.
         .onPlayPauseCommand(perform: onSettings)
-        // Menu closes the artist's page; with it closed, Menu leaves the app as usual.
-        .onExitCommand(perform: showArtist ? { showArtist = false } : nil)
-        .animation(.easeInOut(duration: 0.5), value: showArtist)
-        .task(id: board.showing?.art) { await load(board.showing?.art) }
-        .task(id: board.showing?.artist) {
-            showArtist = false
-            artist = nil
-            guard let name = board.showing?.artist, !name.isEmpty else { return }
-            let found = await Wikipedia.artist(name)
-            if !Task.isCancelled { artist = found }
+        // Menu goes back a page, and from the artist's own page back to the song.
+        .fullScreenCover(item: $artistPage) { request in
+            NavigationStack {
+                ArtistView(request: request, nowPlaying: board.showing?.title)
+                    .navigationDestination(for: ArtistRequest.self) {
+                        ArtistView(request: $0, nowPlaying: board.showing?.title)
+                    }
+            }
         }
+        .task(id: board.showing?.art) { await load(board.showing?.art) }
     }
 
     private func load(_ art: URL?) async {
@@ -84,9 +82,6 @@ private struct Playing: View {
     let showing: Showing
     let cover: UIImage?
     let loading: Bool
-    /// The artist's page, when it's open.
-    let artist: Artist?
-    let hasArtist: Bool
     @State private var hint = true
 
     var body: some View {
@@ -94,38 +89,31 @@ private struct Playing: View {
             Cover(cover: cover, loading: loading)
                 .frame(width: 720, height: 720)
                 .opacity(showing.dimmed ? 0.5 : 1)
-            Group {
-                if let artist {
-                    ArtistPage(artist: artist)
-                } else {
-                    VStack(alignment: .leading, spacing: 18) {
-                        if !showing.source.isEmpty {
-                            Text(showing.source.uppercased())
-                                .font(.caption.weight(.semibold))
-                                .tracking(3)
-                                .foregroundStyle(.secondary)
-                        }
-                        Text(showing.title)
-                            .font(.system(size: 76, weight: .bold))
-                            .lineLimit(3)
-                        Text(showing.artist)
-                            .font(.system(size: 44, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .lineLimit(2)
-                        if !showing.album.isEmpty {
-                            Text(showing.album)
-                                .font(.system(size: 36))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        if let started = showing.startedAt, let duration = showing.duration, duration > 0 {
-                            Progress(started: started, duration: duration)
-                                .padding(.top, 30)
-                        }
-                    }
+            VStack(alignment: .leading, spacing: 18) {
+                if !showing.source.isEmpty {
+                    Text(showing.source.uppercased())
+                        .font(.caption.weight(.semibold))
+                        .tracking(3)
+                        .foregroundStyle(.secondary)
+                }
+                Text(showing.title)
+                    .font(.system(size: 76, weight: .bold))
+                    .lineLimit(3)
+                Text(showing.artist)
+                    .font(.system(size: 44, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(2)
+                if !showing.album.isEmpty {
+                    Text(showing.album)
+                        .font(.system(size: 36))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                if let started = showing.startedAt, let duration = showing.duration, duration > 0 {
+                    Progress(started: started, duration: duration)
+                        .padding(.top, 30)
                 }
             }
-            .transition(.opacity)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 140)
@@ -133,7 +121,7 @@ private struct Playing: View {
         // Nothing on screen says how to reach the settings, so say it for a moment.
         .overlay(alignment: .bottom) {
             if hint {
-                Text(hasArtist ? "Select for the artist  ·  Play/Pause for settings" : "Play/Pause for settings")
+                Text(showing.artist.isEmpty ? "Play/Pause for settings" : "Select for the artist  ·  Play/Pause for settings")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.bottom, 60)
@@ -168,46 +156,6 @@ private struct Cover: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.5), radius: 40, y: 20)
-    }
-}
-
-/// The artist's photo and Wikipedia summary, in place of the song's details.
-private struct ArtistPage: View {
-    let artist: Artist
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(spacing: 30) {
-                if let photo = artist.photo {
-                    AsyncImage(url: photo) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Color.white.opacity(0.08)
-                    }
-                    .frame(width: 160, height: 160)
-                    .clipShape(Circle())
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(artist.name)
-                        .font(.system(size: 56, weight: .bold))
-                        .lineLimit(2)
-                    if let description = artist.description {
-                        Text(description)
-                            .font(.system(size: 30))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-            }
-            Text(artist.summary)
-                .font(.system(size: 30))
-                .foregroundStyle(.white.opacity(0.85))
-                .lineSpacing(6)
-                .lineLimit(11)
-            Text("From Wikipedia")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
     }
 }
 
