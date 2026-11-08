@@ -3,12 +3,15 @@ import SwiftUI
 struct NowPlayingView: View {
     let board: Board
     let onSettings: () -> Void
+    /// The cover on screen. A new one replaces it only once it has loaded, so tracks change without a flash.
+    @State private var cover: UIImage?
+    @State private var loading = false
 
     var body: some View {
         ZStack {
-            Backdrop(art: board.showing?.art)
+            Backdrop(cover: cover)
             if let s = board.showing {
-                Playing(showing: s)
+                Playing(showing: s, cover: cover, loading: loading)
                     .transition(.opacity)
             } else {
                 Idle(problem: board.problem, connected: board.connected, onSettings: onSettings)
@@ -19,26 +22,40 @@ struct NowPlayingView: View {
         .ignoresSafeArea()
         // Play/Pause on the remote opens the settings while something plays.
         .onPlayPauseCommand(perform: onSettings)
+        .task(id: board.showing?.art) { await load(board.showing?.art) }
+    }
+
+    private func load(_ art: URL?) async {
+        guard let art else {
+            loading = false
+            withAnimation(.easeInOut(duration: 0.8)) { cover = nil }
+            return
+        }
+        loading = true
+        let image = try? await URLSession.shared.data(from: art).0
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeInOut(duration: 0.8)) {
+            cover = image.flatMap(UIImage.init(data:))
+            loading = false
+        }
     }
 }
 
 /// The cover, blurred and darkened, filling the screen.
 private struct Backdrop: View {
-    let art: URL?
+    let cover: UIImage?
 
     var body: some View {
         Color.black
             .overlay {
-                if let art {
-                    AsyncImage(url: art) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Color.black
-                    }
-                    .id(art)
-                    .blur(radius: 80)
-                    .opacity(0.55)
-                    .transition(.opacity)
+                if let cover {
+                    Image(uiImage: cover)
+                        .resizable()
+                        .scaledToFill()
+                        .id(ObjectIdentifier(cover))
+                        .blur(radius: 80)
+                        .opacity(0.55)
+                        .transition(.opacity)
                 }
             }
             .clipped()
@@ -47,10 +64,13 @@ private struct Backdrop: View {
 
 private struct Playing: View {
     let showing: Showing
+    let cover: UIImage?
+    let loading: Bool
+    @State private var hint = true
 
     var body: some View {
         HStack(spacing: 90) {
-            Cover(art: showing.art)
+            Cover(cover: cover, loading: loading)
                 .frame(width: 720, height: 720)
                 .opacity(showing.dimmed ? 0.5 : 1)
             VStack(alignment: .leading, spacing: 18) {
@@ -82,35 +102,44 @@ private struct Playing: View {
         }
         .padding(.horizontal, 140)
         .foregroundStyle(.white)
+        // Nothing on screen says how to reach the settings, so say it for a moment.
+        .overlay(alignment: .bottom) {
+            if hint {
+                Label("Play/Pause for settings", systemImage: "playpause.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 60)
+                    .transition(.opacity)
+            }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation(.easeInOut(duration: 0.8)) { hint = false }
+        }
     }
 }
 
 private struct Cover: View {
-    let art: URL?
+    let cover: UIImage?
+    let loading: Bool
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 24).fill(.white.opacity(0.08))
-            if let art {
-                AsyncImage(url: art) { phase in
-                    switch phase {
-                    case .success(let image): image.resizable().scaledToFill()
-                    case .failure: note
-                    default: ProgressView()
-                    }
-                }
-                .id(art)
-                .transition(.opacity)
+            if let cover {
+                Image(uiImage: cover)
+                    .resizable()
+                    .scaledToFill()
+                    .id(ObjectIdentifier(cover))
+                    .transition(.opacity)
+            } else if loading {
+                ProgressView()
             } else {
-                note
+                Image(systemName: "music.note").font(.system(size: 160)).foregroundStyle(.secondary)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.5), radius: 40, y: 20)
-    }
-
-    private var note: some View {
-        Image(systemName: "music.note").font(.system(size: 160)).foregroundStyle(.secondary)
     }
 }
 
@@ -159,9 +188,7 @@ private struct Idle: View {
             Text(connected ? "Nothing playing" : problem ?? "Connecting…")
                 .font(.title2)
                 .foregroundStyle(.white.opacity(0.8))
-            if !connected {
-                Button("Settings", action: onSettings)
-            }
+            Button("Settings", action: onSettings)
         }
         .foregroundStyle(.white)
     }

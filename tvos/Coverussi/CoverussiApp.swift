@@ -26,11 +26,9 @@ struct RootView: View {
 
     var body: some View {
         NowPlayingView(board: board, onSettings: { setup = true })
-            .sheet(isPresented: $setup) {
-                SetupView(config: config) {
-                    setup = false
-                    board.start()
-                }
+            // Connect or Menu, the board is followed at whatever address the sheet was left with.
+            .sheet(isPresented: $setup, onDismiss: { if config.isSet { board.start() } }) {
+                SetupView(config: config) { setup = false }
             }
             .onAppear {
                 if config.isSet { board.start() } else { setup = true }
