@@ -6,8 +6,8 @@ struct NowPlayingView: View {
     /// The cover on screen. A new one replaces it only once it has loaded, so tracks change without a flash.
     @State private var cover: UIImage?
     @State private var loading = false
-    /// The artist page, while it's open.
-    @State private var artistPage: ArtistRequest?
+    /// The track and artist details, while they're open.
+    @State private var info: InfoRequest?
 
     var body: some View {
         ZStack {
@@ -15,10 +15,10 @@ struct NowPlayingView: View {
             if let s = board.showing {
                 Playing(showing: s, cover: cover, loading: loading)
                     .transition(.opacity)
-                    // Select on the remote opens the artist's page.
+                    // Select on the remote opens the details on the track and the artist.
                     .focusable()
                     .onTapGesture {
-                        if !s.artist.isEmpty { artistPage = ArtistRequest(name: s.artist) }
+                        info = InfoRequest(title: s.title, artist: s.artist, album: s.album, cover: s.art)
                     }
             } else {
                 Idle(problem: board.problem, connected: board.connected, onSettings: onSettings)
@@ -29,15 +29,7 @@ struct NowPlayingView: View {
         .ignoresSafeArea()
         // Play/Pause on the remote opens the settings while something plays.
         .onPlayPauseCommand(perform: onSettings)
-        // Menu goes back a page, and from the artist's own page back to the song.
-        .fullScreenCover(item: $artistPage) { request in
-            NavigationStack {
-                ArtistView(request: request, nowPlaying: board.showing?.title)
-                    .navigationDestination(for: ArtistRequest.self) {
-                        ArtistView(request: $0, nowPlaying: board.showing?.title)
-                    }
-            }
-        }
+        .sheet(item: $info) { InfoView(request: $0) }
         .task(id: board.showing?.art) { await load(board.showing?.art) }
     }
 
@@ -121,7 +113,7 @@ private struct Playing: View {
         // Nothing on screen says how to reach the settings, so say it for a moment.
         .overlay(alignment: .bottom) {
             if hint {
-                Text(showing.artist.isEmpty ? "Play/Pause for settings" : "Select for the artist  ·  Play/Pause for settings")
+                Text("Select for track and artist info  ·  Play/Pause for settings")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.bottom, 60)

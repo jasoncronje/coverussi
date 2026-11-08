@@ -1,6 +1,6 @@
 import Foundation
 
-/// What Wikipedia says about an artist.
+/// What Wikipedia says about an artist or a song.
 struct Biography: Equatable {
     var name: String
     var description: String?
@@ -20,6 +20,15 @@ func artistNames(_ name: String) -> [String] {
     return names
 }
 
+/// A title without its edition: "Peg (2023 Remaster)" and "Peg - Live" are "Peg".
+func songTitle(_ title: String) -> String {
+    var t = title
+    for cut in [" (", " - ", " ["] {
+        if let r = t.range(of: cut) { t = String(t[..<r.lowerBound]) }
+    }
+    return t.trimmingCharacters(in: .whitespaces)
+}
+
 enum Wikipedia {
     /// Words in a page's short description that mean it's about music, not a namesake.
     private static let musical = [
@@ -32,13 +41,27 @@ enum Wikipedia {
         for name in artistNames(name) {
             for title in [name, "\(name) (band)", "\(name) (musician)", "\(name) (singer)", "\(name) (rapper)"] {
                 if Task.isCancelled { return nil }
-                if let artist = await page(title) { return artist }
+                if let artist = await page(title, about: musical) { return artist }
             }
         }
         return nil
     }
 
-    private static func page(_ title: String) async -> Biography? {
+    /// The song's page. Songs share titles far more than artists do, so the page must also name the artist.
+    static func song(_ title: String, by artist: String) async -> Biography? {
+        let title = songTitle(title)
+        let artist = artistNames(artist).last ?? artist
+        for page in [title + " (\(artist) song)", title + " (song)", title] {
+            if Task.isCancelled { return nil }
+            if let song = await self.page(page, about: ["song", "single"]),
+               song.summary.range(of: artist, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
+                return song
+            }
+        }
+        return nil
+    }
+
+    private static func page(_ title: String, about words: [String]) async -> Biography? {
         let path = title.replacingOccurrences(of: " ", with: "_")
             .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(["/"])) ?? title
         guard let url = URL(string: "https://en.wikipedia.org/api/rest_v1/page/summary/\(path)") else { return nil }
@@ -51,7 +74,7 @@ enum Wikipedia {
               page.type == "standard"
         else { return nil }
         let about = page.description?.lowercased() ?? ""
-        guard musical.contains(where: { about.contains($0) }) else { return nil }
+        guard words.contains(where: { about.contains($0) }) else { return nil }
         return Biography(
             name: page.title, description: page.description, summary: page.extract,
             photo: page.thumbnail.flatMap { URL(string: $0.source) })
