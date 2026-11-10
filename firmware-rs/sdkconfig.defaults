@@ -14,11 +14,13 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_LWIP_MAX_SOCKETS=16
-# Big buffers (clips, downloads, decoded art) go to PSRAM.
+# C's big buffers go to PSRAM: malloc keeps anything up to 4096 bytes internal.
+# Rust's heap is all in PSRAM (src/heap.rs).
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
-# The panel's DMA buffers take about 160 KB of internal RAM; thread stacks need
-# the rest, so Wi-Fi, lwIP, TLS and MQTT buffers go to PSRAM.
+# Of the 337 KB of internal heap, the panel's DMA buffers take 83 KB and Wi-Fi
+# 80 KB (measured); thread stacks need most of the rest, so Wi-Fi, lwIP, TLS
+# and MQTT buffers go to PSRAM.
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 CONFIG_MQTT_USE_CUSTOM_CONFIG=y

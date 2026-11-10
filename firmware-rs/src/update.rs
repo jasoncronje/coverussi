@@ -1,6 +1,6 @@
 //! Updates from GitHub: what the latest release is, for the web app, and its
 //! coverussi.bin downloaded straight into the other app slot. The download runs
-//! on the recognize thread, whose stack is in internal RAM as flash writes need.
+//! on a thread of its own, its stack in internal RAM as flash writes need.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -15,7 +15,7 @@ use esp_idf_svc::sys;
 use log::{info, warn};
 use serde_json::{json, Value};
 
-use crate::{http, live, work};
+use crate::{http, live};
 
 const REPO: &str = "jasoncronje/coverussi";
 const ASSET: &str = "coverussi.bin";
@@ -23,6 +23,8 @@ const ASSET: &str = "coverussi.bin";
 const HEADERS: [(&str, &str); 2] = [("User-Agent", "coverussi"), ("Accept", "application/vnd.github+json")];
 /// How long a failure stays on the panel.
 const FAILED_SHOWN: Duration = Duration::from_secs(8);
+/// The update thread's stack: an update used 6.5 KB of it (the TLS handshakes, the flash writes).
+const STACK: usize = 12 * 1024;
 
 pub struct Release {
     /// Without the tag's "v".
@@ -85,22 +87,22 @@ pub fn latest() -> Result<Release, String> {
     })
 }
 
-/// Hands the update to the recognize thread; Err if one is running or it's busy.
+/// Starts the update's thread; Err if one is running or there's no memory for its stack.
 pub fn start() -> Result<(), String> {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Err("an update is already running".into());
     }
     set(Some(Update::Starting), "");
-    if !work::update() {
+    if std::thread::Builder::new().name("update".into()).stack_size(STACK).spawn(run).is_err() {
         RUNNING.store(false, Ordering::SeqCst);
         set(None, "");
-        return Err("the board is busy identifying a song; try again in a moment".into());
+        return Err("not enough memory to start the update; restart the display and try again".into());
     }
     Ok(())
 }
 
-/// On the recognize thread: download, check, restart into it.
-pub fn run() {
+/// Download, check, restart into it.
+fn run() {
     match install() {
         Ok(()) => {
             set(Some(Update::Restarting), "");
@@ -141,7 +143,7 @@ fn install() -> Result<(), String> {
     let size = c.header("Content-Length").and_then(|n| n.parse().ok()).unwrap_or(release.size);
     let mut ota = EspOta::new().map_err(|e| e.to_string())?;
     let mut update = ota.initiate_update().map_err(|e| e.to_string())?;
-    let mut buf = vec![0u8; 4096];
+    let mut buf = crate::heap::FlashBuffer::new(4096);
     let (mut total, mut shown) = (0usize, u8::MAX);
     loop {
         let n = match c.read(&mut buf) {

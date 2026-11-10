@@ -3,6 +3,7 @@
 //! publishes from `shared()`.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -68,6 +69,8 @@ pub struct Shared {
 
 static SHARED: OnceLock<Shared> = OnceLock::new();
 static QUEUE: OnceLock<SyncSender<Msg>> = OnceLock::new();
+/// The recent songs changed since they were saved.
+static RECENT_UNSAVED: AtomicBool = AtomicBool::new(false);
 
 pub fn shared() -> &'static Shared {
     SHARED.get().expect("app::init first")
@@ -88,13 +91,14 @@ pub fn now_playing(v: Value) {
     live::send(&json!({"type": "now_playing", "data": v}));
 }
 
-/// Change the recent songs; saved and sent to the web app when they change.
+/// Change the recent songs; sent to the web app when they change, and saved by
+/// the app task: the threads that call this have stacks in PSRAM, which can't write flash.
 pub fn add_recent(f: impl FnOnce(&mut Recent) -> bool) {
     let mut s = state();
     if f(&mut s.recent) {
         let text = s.recent.to_json();
         drop(s);
-        shared().store.set("recent", text.as_bytes());
+        RECENT_UNSAVED.store(true, Ordering::Relaxed);
         live::send(&json!({"type": "recent", "songs": serde_json::from_str::<Value>(&text).unwrap_or_default()}));
     }
 }
@@ -487,6 +491,10 @@ pub fn run(rx: Receiver<Msg>, boot: PinDriver<'static, Input>) -> ! {
                 board::panel_brightness(shown.clamp(0, 255) as u8);
             }
             button.poll(boot.is_low(), t, &mut engine, &mut b);
+            if RECENT_UNSAVED.swap(false, Ordering::Relaxed) {
+                let text = state().recent.to_json();
+                shared().store.set("recent", text.as_bytes());
+            }
             next_tick = t + TICK_MS;
         }
     }

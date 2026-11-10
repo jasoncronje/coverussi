@@ -70,10 +70,11 @@ pub fn start(url: &str) {
         password: b.password.as_deref(),
         keep_alive_interval: Some(Duration::from_secs(30)),
         reconnect_timeout: Some(Duration::from_secs(10)),
-        // Internal RAM is scarce: buffers of 4 KB or more go to PSRAM (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL),
-        // and the task, whose stack can only be internal, runs little more than the callback below.
-        buffer_size: 4096,
-        out_buffer_size: 4096,
+        // Internal RAM is scarce: buffers over 4 KB go to PSRAM (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL; one of
+        // exactly 4096 bytes stays internal), and the task, whose stack can only be internal, runs little
+        // more than the callback below.
+        buffer_size: 4096 + 1,
+        out_buffer_size: 4096 + 1,
         task_stack: 4096,
         lwt: Some(LwtConfiguration { topic: &t.availability, payload: b"offline", qos: QoS::AtLeastOnce, retain: true }),
         ..Default::default()

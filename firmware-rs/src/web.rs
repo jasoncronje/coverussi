@@ -174,7 +174,7 @@ fn set_correction(v: &Value) -> Option<String> {
 fn install(mut req: Req) -> Result {
     let mut ota = EspOta::new()?;
     let mut update = ota.initiate_update()?;
-    let mut buf = vec![0u8; 4096];
+    let mut buf = crate::heap::FlashBuffer::new(4096);
     let mut total = 0usize;
     loop {
         let n = match req.read(&mut buf) {
@@ -202,8 +202,8 @@ fn install(mut req: Req) -> Result {
     }
     info!("firmware update of {total} bytes verified; restarting");
     ok(req, &json!({"ok": true, "size": total}))?;
-    // Restarts from here: a thread to do it needs an 8 KB stack, more internal
-    // RAM than is free, and failing to start one crashed the board.
+    // Restarts from here: a thread to do it needs an 8 KB stack in internal RAM,
+    // and failing to start one, when there was none, crashed the board.
     std::thread::sleep(std::time::Duration::from_secs(1));
     unsafe { sys::esp_restart() };
     Ok(())

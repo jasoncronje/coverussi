@@ -30,8 +30,6 @@ enum Job {
     /// A clip still recording: its blocks, until the sender hangs up.
     Stream { blocks: Receiver<Vec<i16>>, clip_ms: u32, source: String },
     Play(Play),
-    /// The latest GitHub release, into the other app slot.
-    Update,
 }
 
 static ART: OnceLock<SyncSender<String>> = OnceLock::new();
@@ -95,13 +93,9 @@ pub fn start() {
     let _ = ART.set(art_tx);
     let _ = JOBS.set(job_tx);
     crate::spawn_in_psram("art", 10 * 1024, move || art_loop(art_rx));
-    // The signature's FFT and the TLS handshake both want stack. Internal RAM:
-    // a recognition saves the recent songs to NVS.
-    std::thread::Builder::new()
-        .name("recognize".into())
-        .stack_size(32 * 1024)
-        .spawn(move || job_loop(job_rx))
-        .expect("recognize thread");
+    // The signature's FFT and the TLS handshake both want stack. Nothing here
+    // writes flash: the app task saves the recent songs.
+    crate::spawn_in_psram("recognize", 32 * 1024, move || job_loop(job_rx));
 }
 
 /// A Home Assistant path (/api/media_player_proxy/...) or a URL.
@@ -122,11 +116,6 @@ pub fn played(p: Play) {
     if let Some(tx) = JOBS.get() {
         let _ = tx.try_send(Job::Play(p));
     }
-}
-
-/// Queues an update from GitHub; false if the queue is full.
-pub fn update() -> bool {
-    JOBS.get().is_some_and(|tx| tx.try_send(Job::Update).is_ok())
 }
 
 fn art_loop(rx: Receiver<String>) {
@@ -172,7 +161,6 @@ fn job_loop(rx: Receiver<Job>) {
                 let (album, art) = song_art(&p.artist, &p.title).unwrap_or((None, None));
                 app::add_recent(|r| r.streamed(&p, album, art));
             }
-            Job::Update => crate::update::run(),
         }
     }
 }

@@ -8,6 +8,7 @@ mod audio;
 mod board;
 mod config;
 mod ha;
+mod heap;
 mod http;
 mod live;
 mod mqtt;
@@ -49,7 +50,7 @@ fn main() {
 
     net::dns_override(net::host_of(&creds.ha_url), &creds.connect_ip);
     let rx = app::init(creds.clone(), store);
-    work::start(); // before Wi-Fi: its 32 KB stack needs a big unbroken block
+    work::start();
     #[cfg(not(feature = "qemu"))]
     net::start(p.modem, sysloop, nvs, &creds);
     #[cfg(feature = "qemu")]
