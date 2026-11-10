@@ -16,7 +16,8 @@
   // Links saved before a rename or move still land; the old Display page is the Controller area now.
   const moved: Record<string, string> = { now: 'home', history: 'recent', device: 'settings/device', display: 'settings/device', 'settings/listening': 'settings/general', 'settings/home_assistant': 'settings/general' };
 
-  let session = $state<'checking' | 'in' | 'out'>('checking');
+  // unreachable: the board didn't answer the session check (restarting, off Wi-Fi), which says nothing about a password.
+  let session = $state<'checking' | 'unreachable' | 'in' | 'out'>('checking');
   // #/settings/panel: the page, then where in it.
   let route = $state(readHash());
   const page = $derived(route[0] as Page);
@@ -57,12 +58,21 @@
       setupAsked = location.hash === '#/setup';
     };
     window.addEventListener('hashchange', onHash);
-    api.session().then((s) => {
+    // Ask until the board answers; only its answer shows the login page.
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const check = () => api.session().then((s) => {
       auth.passwordSet = s.password_set;
       if (s.logged_in) enter();
       else session = 'out';
-    }, () => (session = 'out'));
-    return () => window.removeEventListener('hashchange', onHash);
+    }, () => {
+      session = 'unreachable';
+      retry = setTimeout(check, 3000);
+    });
+    void check();
+    return () => {
+      clearTimeout(retry);
+      window.removeEventListener('hashchange', onHash);
+    };
   });
 
   // A newer release than the one running, until it's installing; Controller has the button.
@@ -76,7 +86,13 @@
   const problem = $derived(!live.connected ? 'Offline' : live.telemetry.ha_connected === false ? 'Home Assistant not connected' : '');
 </script>
 
-{#if session === 'out'}
+{#if session === 'unreachable'}
+  <div class="unreachable card">
+    <img src="/wordmark.svg" alt="Coverussi" />
+    <p>Can’t reach the display. Trying again…</p>
+    <p class="muted small">It may be restarting after an update, or off Wi-Fi.</p>
+  </div>
+{:else if session === 'out'}
   <Login onlogin={enter} />
 {:else if session === 'in' && setup}
   <Setup ondone={() => { setupAsked = false; location.hash = '#/home'; }} />
@@ -120,6 +136,9 @@
   nav a:hover, nav a.active { color: #ffffff; }
   nav .dot { margin-left: -2px; }
   main { padding-top: 32px; padding-bottom: 64px; }
+  .unreachable { max-width: 360px; margin: 18vh auto 0; gap: 8px; }
+  .unreachable img { display: block; width: 100%; margin-bottom: 8px; }
+  .unreachable p { margin: 0; }
   @media (max-width: 640px) {
     .bar { height: auto; display: flex; flex-wrap: wrap; justify-content: space-between; row-gap: 0; column-gap: 16px; padding: 0 16px; }
     .brand { height: 48px; }

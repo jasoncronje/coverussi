@@ -11,8 +11,8 @@ export function whenUnauthorized(fn: () => void) {
   onUnauthorized = fn;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method, credentials: 'same-origin' };
+async function request<T>(method: string, path: string, body?: unknown, timeoutMs?: number): Promise<T> {
+  const init: RequestInit = { method, credentials: 'same-origin', signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined };
   if (body instanceof Blob) {
     init.body = body;
     init.headers = { 'Content-Type': 'application/octet-stream' };
@@ -35,7 +35,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  session: () => request<{ logged_in: boolean; password_set: boolean }>('GET', '/api/session'),
+  // A board that's restarting can leave the request hanging; give up and ask again.
+  session: () => request<{ logged_in: boolean; password_set: boolean }>('GET', '/api/session', undefined, 5000),
   login: (password: string) => request<{ ok: boolean }>('POST', '/api/login', { password }),
   logout: () => request<{ ok: boolean }>('POST', '/api/logout'),
   // Sets or changes the password; '' removes it.
