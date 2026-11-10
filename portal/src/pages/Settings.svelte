@@ -6,6 +6,7 @@
   import Broker from './Broker.svelte';
   import Calibrate from './Calibrate.svelte';
   import DevicePage from './Device.svelte';
+  import FilmColors from './FilmColors.svelte';
   import IdleScreen from './IdleScreen.svelte';
   import Password, { PASSWORD_MIN } from './Password.svelte';
   import { session } from '../lib/session.svelte';
@@ -124,6 +125,10 @@
         { key: 'record_label', label: 'Label colour', kind: 'colour', tip: 'The colour of the label in the middle of the record.' },
         { key: 'record_sheen', label: 'Shines with the music', kind: 'bool', tip: 'The light on the vinyl gets brighter as the music gets louder.' }
       ]
+    },
+    {
+      id: 'film', area: 'display', key: 'display', title: 'Film screen', custom: true, fields: [],
+      tip: 'The ring round the edge of the film screen fills as a video plays. Each app can light it in its own colour; apps not listed use the ring colour.'
     },
     {
       id: 'idle', area: 'display', key: 'idle', title: 'When nothing plays', custom: true, fields: [],
@@ -375,6 +380,10 @@
         {#if g.id === 'home_assistant' && broker}
           <Broker bind:address={brokerAddress} bind:username={brokerUser} bind:password={brokerPassword}
             passwordSet={broker.password_set} status={brokerStatus} />
+        {/if}
+        {#if g.id === 'film'}
+          <FilmColors display={draft.display}
+            onchange={(d) => { draft!.display = d; saved = ''; }} />
         {/if}
         {#if g.id === 'idle'}
           <IdleScreen idle={draft.idle} onchange={(i) => { draft!.idle = i; saved = ''; }} />

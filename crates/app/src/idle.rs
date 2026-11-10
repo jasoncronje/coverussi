@@ -34,8 +34,7 @@ const AMBER: [u8; 3] = [242, 179, 61];
 const UNLIT: [u8; 3] = [38, 38, 38];
 /// An update that failed.
 const RED: [u8; 3] = [229, 86, 111];
-/// The film screen's ring, watched and to come.
-const ORANGE: [u8; 3] = [255, 138, 31];
+/// The film screen's ring to come.
 const DIM: [u8; 3] = [42, 42, 42];
 /// Pixels in the 1 px border the ring runs round.
 const RING: u32 = 4 * (SIZE as u32 - 1);
@@ -69,8 +68,8 @@ pub enum Content {
     /// (label, value) rows.
     Entities(Vec<(String, String)>),
     /// A video app: the idle screen (the clock when that's off) inside a ring with this many
-    /// of its pixels lit, for how far into the film it is.
-    Film { screen: Box<Content>, lit: u32 },
+    /// of its pixels lit in the app's colour, for how far into the film it is.
+    Film { screen: Box<Content>, lit: u32, color: [u8; 3] },
 }
 
 /// The screen to show, or None to leave the panel dark.
@@ -118,8 +117,8 @@ pub fn content(idle: &Idle, ha: &HaStates, clock: Option<LocalTime>) -> Option<C
     }
 }
 
-/// The film screen for the player shown: the idle screen, with the ring for its progress.
-pub fn film(idle: &Idle, ha: &HaStates, p: Option<&Player>, clock: Option<LocalTime>) -> Content {
+/// The film screen for the player shown: the idle screen, with the ring for its progress in `color`.
+pub fn film(idle: &Idle, ha: &HaStates, p: Option<&Player>, clock: Option<LocalTime>, color: [u8; 3]) -> Content {
     let shown = if idle.show == IdleShow::Off { Idle { show: IdleShow::Clock, ..idle.clone() } } else { idle.clone() };
     let screen = content(&shown, ha, clock).unwrap_or(Content::Entities(Vec::new()));
     let at = p.and_then(|p| p.position_now(clock.map_or(0.0, |c| c.unix as f64)));
@@ -128,7 +127,7 @@ pub fn film(idle: &Idle, ha: &HaStates, p: Option<&Player>, clock: Option<LocalT
         (Some(at), Some(d)) => ((at / d).clamp(0.0, 1.0) * RING as f64) as u32,
         _ => 0,
     };
-    Content::Film { screen: Box::new(screen), lit }
+    Content::Film { screen: Box::new(screen), lit, color }
 }
 
 /// When the ring goes back (the next video, the start again), it runs down to nothing, then fills
@@ -232,11 +231,11 @@ fn entity_value(state: &str, unit: &str) -> String {
 
 /// Draw a screen.
 pub fn draw(c: &Content) -> Box<Rgb> {
-    if let Content::Film { screen, lit } = c {
+    if let Content::Film { screen, lit, color } = c {
         let mut p = Canvas(draw(screen));
         for i in 0..RING {
             let (x, y) = ring(i);
-            p.set(x, y, if i < *lit { ORANGE } else { DIM });
+            p.set(x, y, if i < *lit { *color } else { DIM });
         }
         return p.0;
     }
@@ -715,6 +714,8 @@ const BIG: [(char, [u8; 7]); 44] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ORANGE: [u8; 3] = [255, 138, 31];
     use crate::settings::IdleEntity;
     use serde_json::json;
 
@@ -886,19 +887,19 @@ mod tests {
         p.duration = Some(8880.0);
         // The idle screen inside the ring; the clock when the idle screen is off.
         let clock_screen = content(&idle(IdleShow::Clock), &ha, Some(clock)).unwrap();
-        let Content::Film { screen, lit } = film(&idle(IdleShow::Off), &ha, Some(&p), Some(clock)) else { panic!() };
+        let Content::Film { screen, lit, .. } = film(&idle(IdleShow::Off), &ha, Some(&p), Some(clock), ORANGE) else { panic!() };
         assert_eq!((*screen, lit), (clock_screen.clone(), 125));
-        let Content::Film { screen, .. } = film(&idle(IdleShow::Weather), &ha, Some(&p), Some(clock)) else { panic!() };
+        let Content::Film { screen, .. } = film(&idle(IdleShow::Weather), &ha, Some(&p), Some(clock), ORANGE) else { panic!() };
         assert!(matches!(*screen, Content::Weather { .. }));
         // No length: no ring.
         p.duration = None;
-        assert!(matches!(film(&idle(IdleShow::Clock), &ha, Some(&p), Some(clock)), Content::Film { lit: 0, .. }));
+        assert!(matches!(film(&idle(IdleShow::Clock), &ha, Some(&p), Some(clock), ORANGE), Content::Film { lit: 0, .. }));
         // The ring goes once round the border, clockwise from the top middle.
         let all: std::collections::HashSet<_> = (0..RING).map(ring).collect();
         assert_eq!((all.len(), RING), (252, 252));
         assert_eq!((ring(0), ring(1), ring(31), ring(32), ring(94), ring(251)), ((32, 0), (33, 0), (63, 0), (63, 1), (63, 63), (31, 0)));
         assert!(all.iter().all(|&(x, y)| x == 0 || y == 0 || x == 63 || y == 63));
-        let img = draw(&Content::Film { screen: Box::new(clock_screen), lit: 2 });
+        let img = draw(&Content::Film { screen: Box::new(clock_screen), lit: 2, color: ORANGE });
         let px = |x: usize, y: usize| [img[(y * SIZE + x) * 3], img[(y * SIZE + x) * 3 + 1], img[(y * SIZE + x) * 3 + 2]];
         assert_eq!((px(32, 0), px(33, 0), px(34, 0)), (ORANGE, ORANGE, DIM));
         assert!((19..33).any(|y| (8..56).any(|x| px(x, y) == WHITE))); // the clock

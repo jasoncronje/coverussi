@@ -144,6 +144,8 @@ export interface Settings {
     record_rpm: 33 | 45 | 78;
     record_label: string; // #rrggbb
     record_sheen: boolean;
+    film_ring: string; // #rrggbb, for apps with no colour of their own
+    film_colors: { app: string; color: string }[];
   };
   sources: { digital: DigitalSource[]; analog: AnalogSource[]; listen_for_music: boolean };
   listening: {

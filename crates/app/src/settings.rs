@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::model::Player;
 use crate::tz::posix_tz;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -79,7 +80,39 @@ pub struct Display {
     pub record_label: String,
     /// The sheen brightens as the music gets louder.
     pub record_sheen: bool,
+    /// The film screen's ring, `#rrggbb`, for an app with no colour of its own.
+    pub film_ring: String,
+    /// Each app's ring colour, the first that names the app (as `Settings::app_show` matches it).
+    pub film_colors: Vec<AppColor>,
 }
+
+/// An app's ring colour on the film screen.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AppColor {
+    pub app: String,
+    /// `#rrggbb`.
+    pub color: String,
+}
+
+/// The ring colours a new display starts with: each app's own.
+const FILM_COLORS: [(&str, &str); 16] = [
+    ("YouTube", "#ff0000"),
+    ("Netflix", "#e50914"),
+    ("Spotify", "#1ed760"),
+    ("Plex", "#e5a00d"),
+    ("Apple Music", "#fa243c"),
+    ("Music", "#fa243c"),
+    ("Hulu", "#1ce783"),
+    ("Disney+", "#0063e5"),
+    ("Prime Video", "#00a8e1"),
+    ("Max", "#002be7"),
+    ("Apple TV", "#f5f5f7"),
+    ("TV", "#f5f5f7"),
+    ("Paramount+", "#0064ff"),
+    ("Peacock", "#fcc30b"),
+    ("Twitch", "#9146ff"),
+    ("Crunchyroll", "#f47521"),
+];
 
 /// How the panel draws colour. The web app's mirror shows the art untouched.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -120,13 +153,27 @@ impl Display {
 
     /// The record's label colour, from `#rrggbb`.
     pub fn record_color(&self) -> Option<[u8; 3]> {
-        let h = self.record_label.strip_prefix('#')?;
-        if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return None;
-        }
-        let byte = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
-        Some([byte(0)?, byte(2)?, byte(4)?])
+        hex(&self.record_label)
     }
+
+    /// The film screen's ring colour for this player's app: its own, else the film ring's.
+    pub fn film_color(&self, p: Option<&Player>) -> [u8; 3] {
+        let same = |a: &str, b: &str| !b.is_empty() && a.eq_ignore_ascii_case(b);
+        let own = p.and_then(|p| {
+            self.film_colors.iter().find(|c| same(&c.app, &p.app_name) || same(&c.app, &p.app_id) || same(&c.app, &p.source))
+        });
+        own.and_then(|c| hex(&c.color)).or_else(|| hex(&self.film_ring)).unwrap_or([255, 138, 31])
+    }
+}
+
+/// A colour from `#rrggbb`.
+fn hex(s: &str) -> Option<[u8; 3]> {
+    let h = s.strip_prefix('#')?;
+    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let byte = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
+    Some([byte(0)?, byte(2)?, byte(4)?])
 }
 
 impl Default for Display {
@@ -153,6 +200,8 @@ impl Default for Display {
             record_rpm: 33,
             record_label: "#f2b33d".into(),
             record_sheen: true,
+            film_ring: "#ff8a1f".into(),
+            film_colors: FILM_COLORS.iter().map(|(app, color)| AppColor { app: app.to_string(), color: color.to_string() }).collect(),
         }
     }
 }
@@ -387,6 +436,15 @@ impl Settings {
         if d.record_color().is_none() {
             return Err(Invalid(format!("display.record_label: {:?} isn't a colour like #f2b33d", d.record_label)));
         }
+        if hex(&d.film_ring).is_none() {
+            return Err(Invalid(format!("display.film_ring: {:?} isn't a colour like #ff8a1f", d.film_ring)));
+        }
+        for (i, c) in d.film_colors.iter().enumerate() {
+            not_empty(&format!("display.film_colors.{i}.app"), &c.app)?;
+            if hex(&c.color).is_none() {
+                return Err(Invalid(format!("display.film_colors.{i}.color: {:?} isn't a colour like #ff0000", c.color)));
+            }
+        }
         if posix_tz(&d.time_zone).is_none() {
             return Err(Invalid(format!(
                 "display.time_zone: unknown time zone {:?}; use an IANA name like Europe/London",
@@ -568,6 +626,21 @@ mod tests {
         assert!(parse(json!({"display": {"record_rpm": 16}})).is_err());
         assert!(parse(json!({"display": {"record_label": "amber"}})).is_err());
         assert!(parse(json!({"display": {"song_text_s": 1}})).is_err());
+    }
+
+    #[test]
+    fn film_ring_colours() {
+        let d = Settings::default().display;
+        let p = |app: &str, id: &str| Player { app_name: app.into(), app_id: id.into(), ..Default::default() };
+        assert_eq!(d.film_color(Some(&p("YouTube", ""))), [255, 0, 0]);
+        assert_eq!(d.film_color(Some(&p("", "netflix"))), [229, 9, 20]); // any case, app_name or app_id
+        assert_eq!(d.film_color(Some(&p("Some App", ""))), [255, 138, 31]); // no colour of its own
+        assert_eq!(d.film_color(None), [255, 138, 31]);
+        let s = parse(json!({"display": {"film_ring": "#00ff00", "film_colors": [{"app": "Plex", "color": "#0000FF"}]}})).unwrap();
+        assert_eq!((s.display.film_color(Some(&p("Plex", ""))), s.display.film_color(Some(&p("YouTube", "")))), ([0, 0, 255], [0, 255, 0]));
+        assert!(parse(json!({"display": {"film_ring": "orange"}})).is_err());
+        assert!(parse(json!({"display": {"film_colors": [{"app": "Plex", "color": "blue"}]}})).is_err());
+        assert!(parse(json!({"display": {"film_colors": [{"app": "", "color": "#0000ff"}]}})).is_err());
     }
 
     #[test]

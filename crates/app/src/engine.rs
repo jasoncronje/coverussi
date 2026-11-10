@@ -303,7 +303,9 @@ impl Engine {
     /// says changes (the minute, a state, the ring, which runs down and fills up for the next video).
     fn show_idle(&mut self, now: Ms) {
         let content = if self.device.mode() == Mode::Film {
-            let mut c = idle::film(&self.device.settings.idle, &self.ha, self.device.source(), self.clock);
+            let s = &self.device.settings;
+            let color = s.display.film_color(self.device.source());
+            let mut c = idle::film(&s.idle, &self.ha, self.device.source(), self.clock, color);
             if let idle::Content::Film { lit, .. } = &mut c {
                 let on = matches!(self.idle, Some(Some(idle::Content::Film { .. })));
                 *lit = self.ring.lit(*lit, now, on);
