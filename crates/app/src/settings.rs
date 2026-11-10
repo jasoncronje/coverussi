@@ -94,24 +94,25 @@ pub struct AppColor {
     pub color: String,
 }
 
-/// The ring colours a new display starts with: each app's own.
+/// The ring colours a new display starts with: each app's own, made bright and saturated so they
+/// show on the LEDs (deep blues and dark reds barely light up).
 const FILM_COLORS: [(&str, &str); 16] = [
     ("YouTube", "#ff0000"),
-    ("Netflix", "#e50914"),
-    ("Spotify", "#1ed760"),
-    ("Plex", "#e5a00d"),
-    ("Apple Music", "#fa243c"),
-    ("Music", "#fa243c"),
-    ("Hulu", "#1ce783"),
-    ("Disney+", "#0063e5"),
-    ("Prime Video", "#00a8e1"),
-    ("Max", "#002be7"),
-    ("Apple TV", "#f5f5f7"),
-    ("TV", "#f5f5f7"),
-    ("Paramount+", "#0064ff"),
-    ("Peacock", "#fcc30b"),
-    ("Twitch", "#9146ff"),
-    ("Crunchyroll", "#f47521"),
+    ("Netflix", "#ff1020"),
+    ("Spotify", "#1eff60"),
+    ("Plex", "#ffaa00"),
+    ("Apple Music", "#ff2848"),
+    ("Music", "#ff2848"),
+    ("Hulu", "#20ffa0"),
+    ("Disney+", "#2090ff"),
+    ("Prime Video", "#00c8ff"),
+    ("Max", "#5070ff"),
+    ("Apple TV", "#ffffff"),
+    ("TV", "#ffffff"),
+    ("Paramount+", "#3080ff"),
+    ("Peacock", "#ffd000"),
+    ("Twitch", "#a855ff"),
+    ("Crunchyroll", "#ff7020"),
 ];
 
 /// How the panel draws colour. The web app's mirror shows the art untouched.
@@ -633,7 +634,7 @@ mod tests {
         let d = Settings::default().display;
         let p = |app: &str, id: &str| Player { app_name: app.into(), app_id: id.into(), ..Default::default() };
         assert_eq!(d.film_color(Some(&p("YouTube", ""))), [255, 0, 0]);
-        assert_eq!(d.film_color(Some(&p("", "netflix"))), [229, 9, 20]); // any case, app_name or app_id
+        assert_eq!(d.film_color(Some(&p("", "netflix"))), [255, 16, 32]); // any case, app_name or app_id
         assert_eq!(d.film_color(Some(&p("Some App", ""))), [255, 138, 31]); // no colour of its own
         assert_eq!(d.film_color(None), [255, 138, 31]);
         let s = parse(json!({"display": {"film_ring": "#00ff00", "film_colors": [{"app": "Plex", "color": "#0000FF"}]}})).unwrap();
