@@ -1,6 +1,6 @@
 // What each app on a digital source shows, read and changed the way the device
 // reads it (Settings::app_show): progress, off, then the cover list, else `other`.
-import type { AppShow, DigitalSource } from './types';
+import type { AnalogSource, AppShow, DigitalSource } from './types';
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const has = (list: string[] | undefined, app: string) => !!list?.some((a) => same(a, app));
@@ -44,18 +44,45 @@ export function setOtherShow(d: DigitalSource, show: AppShow): DigitalSource {
   return save(d, { ...lists(d), other: show });
 }
 
-/** A short line for the player's row: "All apps", "Cover: Music · Progress: Netflix +2 · others off". */
-export function showSummary(d: DigitalSource): string {
+/** A row's choice: what the app shows, or analog, where the display listens instead. */
+export type RowShow = AppShow | 'analog';
+
+// An analog source that is one of this player's inputs or apps. The device compares the value exactly.
+const isInput = (a: AnalogSource, entity: string, app: string) =>
+  a.entity === entity && (a.attribute === 'source' || a.attribute === 'app_name') && a.value === app;
+
+/** This input is listened to: an analog source that's on wins over whatever the app shows. */
+export function isAnalog(analog: AnalogSource[], entity: string, app: string): boolean {
+  return analog.some((a) => a.enabled && isInput(a, entity, app));
+}
+
+/** The player's inputs that are listened to. */
+function analogInputs(analog: AnalogSource[], entity: string): string[] {
+  return analog.filter((a) => a.enabled && isInput(a, entity, a.value)).map((a) => a.value);
+}
+
+/** Make an input an analog source (one that's off is turned on), or stop it being one. */
+export function setAnalog(analog: AnalogSource[], entity: string, app: string, on: boolean, attribute = 'source'): AnalogSource[] {
+  if (!on) return analog.filter((a) => !isInput(a, entity, app));
+  if (analog.some((a) => isInput(a, entity, app))) return analog.map((a) => (isInput(a, entity, app) ? { ...a, enabled: true } : a));
+  return [...analog, { name: app, entity, attribute, value: app, enabled: true }];
+}
+
+/** A short line for the player's row: "All apps", "Analog: Phono · Progress: Netflix +2 · others off". */
+export function showSummary(d: DigitalSource, analog: AnalogSource[] = []): string {
   const l = lists(d);
-  const picked = (['cover', 'progress', 'off'] as const).filter((k) => l[k].length && k !== l.other);
-  if (!picked.length) return l.other === 'cover' ? 'All apps' : l.other === 'progress' ? 'Progress for all' : 'No apps';
+  const heard = analogInputs(analog, d.entity);
+  const shown = (k: AppShow) => l[k].filter((a) => !heard.includes(a));
+  const picked = (['cover', 'progress', 'off'] as const).filter((k) => shown(k).length && k !== l.other);
+  if (!picked.length && !heard.length) return l.other === 'cover' ? 'All apps' : l.other === 'progress' ? 'Progress for all' : 'No apps';
   const names = (list: string[]) => (list.length <= 2 ? list.join(', ') : `${list.slice(0, 2).join(', ')} +${list.length - 2}`);
-  const parts = picked.map((k) => `${k === 'cover' ? 'Cover' : k === 'progress' ? 'Progress' : 'Off'}: ${names(l[k])}`);
+  const parts = picked.map((k) => `${k === 'cover' ? 'Cover' : k === 'progress' ? 'Progress' : 'Off'}: ${names(shown(k))}`);
+  if (heard.length) parts.unshift(`Analog: ${names(heard)}`);
   return [...parts, `others ${l.other}`].join(' · ');
 }
 
 /** Showing anything but the cover for every app. */
-export function limited(d: DigitalSource): boolean {
+export function limited(d: DigitalSource, analog: AnalogSource[] = []): boolean {
   const l = lists(d);
-  return l.other !== 'cover' || l.progress.length > 0 || l.off.length > 0;
+  return l.other !== 'cover' || l.progress.length > 0 || l.off.length > 0 || analogInputs(analog, d.entity).length > 0;
 }

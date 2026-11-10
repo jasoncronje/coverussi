@@ -1,14 +1,16 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   // Lists a player's apps or inputs (read from Home Assistant by the device, so a
-  // player added but not saved yet works) so each can show its cover, the progress screen or nothing.
+  // player added but not saved yet works) so each can show its cover, the progress screen or nothing,
+  // or be analog: an input the player can't name the music of, which the display listens to.
   import { api } from '../lib/api';
-  import { appShow, otherShow, setAppShow, setOtherShow } from '../lib/apps';
+  import { appShow, isAnalog, otherShow, setAnalog, setAppShow, setOtherShow, type RowShow } from '../lib/apps';
   import Icon from '../lib/Icon.svelte';
   import Segmented from '../lib/Segmented.svelte';
-  import type { AppShow, AppsResult, DigitalSource } from '../lib/types';
+  import type { AnalogSource, AppShow, AppsResult, DigitalSource } from '../lib/types';
 
-  let { source, onchange }: { source: DigitalSource; onchange: (d: DigitalSource) => void } = $props();
+  // One change carries both lists: picking analog, or leaving it, touches the analog sources too.
+  let { source, analog, onchange }: { source: DigitalSource; analog: AnalogSource[]; onchange: (d: DigitalSource, analog: AnalogSource[]) => void } = $props();
   const entity = $derived(source.entity);
 
   let result = $state<AppsResult | null>(null);
@@ -37,12 +39,21 @@
   const SHOWS: { value: AppShow; label: string }[] = [
     { value: 'cover', label: 'Cover' }, { value: 'progress', label: 'Progress' }, { value: 'off', label: 'Off' },
   ];
+  const ROW_SHOWS: { value: RowShow; label: string }[] = [...SHOWS.slice(0, 2), { value: 'analog', label: 'Analog' }, SHOWS[2]];
   const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const rowShow = (app: string): RowShow => (isAnalog(analog, entity, app) ? 'analog' : appShow(source, app));
+  function setRow(app: string, show: RowShow) {
+    // Home Assistant names an input in `source`; a player with apps only (an Apple TV) in `app_name`.
+    const attribute = result?.app_name && !result.source ? 'app_name' : 'source';
+    if (show === 'analog') onchange(source, setAnalog(analog, entity, app, true, attribute));
+    else onchange(setAppShow(source, app, show), setAnalog(analog, entity, app, false));
+  }
   const current = $derived(result?.app_name || result?.source || '');
   // Every app HA lists, then the one open now, then picks this player doesn't list.
   const apps = $derived.by(() => {
     const out: string[] = [];
-    const picked = [...source.apps, ...(source.progress ?? []), ...(source.off ?? [])];
+    const heard = analog.filter((a) => a.entity === entity && (a.attribute === 'source' || a.attribute === 'app_name')).map((a) => a.value);
+    const picked = [...source.apps, ...(source.progress ?? []), ...(source.off ?? []), ...heard];
     for (const a of [...(result?.apps ?? []), current, ...picked]) if (a && !out.some((o) => same(o, a))) out.push(a);
     return out;
   });
@@ -54,7 +65,7 @@
   // taken when the list arrives, so a row doesn't jump away while it's being changed.
   let picked = $state<string[]>([]);
   $effect(() => {
-    if (result) picked = untrack(() => apps.filter((a) => appShow(source, a) !== otherShow(source)));
+    if (result) picked = untrack(() => apps.filter((a) => rowShow(a) !== otherShow(source)));
   });
   const isPicked = (app: string) => picked.some((p) => same(p, app));
   const picks = $derived(matches.filter(isPicked));
@@ -70,8 +81,9 @@
     if (asking) return 'Asking Home Assistant…';
     if (!result) return '';
     if (!result.apps.length) return 'Home Assistant lists no apps or inputs for this player.';
-    const count = (show: AppShow) => apps.filter((a) => appShow(source, a) === show).length;
-    return `${count('cover')} cover · ${count('progress')} progress · ${count('off')} off`;
+    const count = (show: RowShow) => apps.filter((a) => rowShow(a) === show).length;
+    const heard = count('analog') ? ` · ${count('analog')} analog` : '';
+    return `${count('cover')} cover · ${count('progress')} progress${heard} · ${count('off')} off`;
   });
 </script>
 
@@ -88,12 +100,12 @@
     </button>
   </div>
   {#snippet row(app: string)}
-    {@const show = appShow(source, app)}
+    {@const show = rowShow(app)}
     <li class="app" class:on={show !== 'off'} class:quiet={show === otherShow(source)}>
       <span class="label">{app}</span>
       {#if same(app, current)}<span class="pill">Open</span>
       {:else if result && !result.apps.some((a) => same(a, app))}<span class="faint small" title="This player doesn’t list it now">Not listed</span>{/if}
-      <Segmented label={`What ${app} shows`} value={show} options={SHOWS} onchange={(v) => onchange(setAppShow(source, app, v))} />
+      <Segmented label={`What ${app} shows`} value={show} options={ROW_SHOWS} onchange={(v) => setRow(app, v)} />
     </li>
   {/snippet}
   {#if picks.length}
@@ -112,7 +124,7 @@
   {/if}
   <div class="app other on">
     <span class="label">Every other app</span>
-    <Segmented label="What every other app shows" value={otherShow(source)} options={SHOWS} onchange={(v) => onchange(setOtherShow(source, v))} />
+    <Segmented label="What every other app shows" value={otherShow(source)} options={SHOWS} onchange={(v) => onchange(setOtherShow(source, v), analog)} />
   </div>
   {#if error}<p class="error small">{error}</p>{/if}
 </div>

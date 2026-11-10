@@ -1,7 +1,7 @@
 <script lang="ts">
   // Digital sources: smart players whose art shows, each with an optional app
   // list. Analog sources: devices that can't say what they play, each with the
-  // Home Assistant state that means it's playing. Each source is a row that
+  // Home Assistant state that means it's playing; a player's input set to Analog is one of them. Each source is a row that
   // opens to edit it, with a switch to turn it off and a grip to drag it: the
   // first one playing wins.
   import { api } from '../lib/api';
@@ -100,9 +100,6 @@
     digital([...sources.digital, { entity, apps: [], enabled: true }]);
     adding = null;
   }
-  function setSource(i: number, next: DigitalSource) {
-    digital(sources.digital.map((d, j) => (j === i ? next : d)));
-  }
 
   // Analog
   function analog(list: AnalogSource[]) {
@@ -112,8 +109,7 @@
     analog(sources.analog.map((x, j) => (j === i ? { ...x, ...a } : x)));
   }
   function addAnalog() {
-    const name = sources.analog.length ? '' : 'Turntable';
-    analog([...sources.analog, { name, entity: '', attribute: 'source', value: '', enabled: true }]);
+    analog([...sources.analog, { name: '', entity: '', attribute: 'source', value: '', enabled: true }]);
     open[`a${sources.analog.length}`] = true;
   }
   function removeAnalog(i: number) {
@@ -121,7 +117,7 @@
     open = {};
   }
   const analogError = (a: AnalogSource) =>
-    !ENTITY.test(a.entity) ? 'An entity id, like media_player.wiim_ultra or switch.turntable.'
+    !ENTITY.test(a.entity) ? 'An entity id, like media_player.wiim_ultra or switch.cd_player.'
       : !a.attribute.trim() ? 'Name the attribute, or pick its state.'
       : !a.value.trim() ? 'The value that means it’s playing.' : '';
   // What each entity can match on, asked of Home Assistant when a trigger field is focused.
@@ -165,7 +161,7 @@
           <button class="toggle" aria-expanded={isOpen} onclick={() => toggle(d.entity)}>
             <span class="chevron"><Icon name="chevron-down" size={16} /></span>
             <span class="what"><span class="name">{name}</span><span class="sub">{d.entity}</span></span>
-            <span class="state" class:limited={limited(d)}>{d.enabled ? showSummary(d) : 'Off'}</span>
+            <span class="state" class:limited={limited(d, sources.analog)}>{d.enabled ? showSummary(d, sources.analog) : 'Off'}</span>
           </button>
           <input type="checkbox" class="switch" checked={d.enabled} aria-label={`Follow ${name}`} title={d.enabled ? 'On' : 'Off'}
             onchange={(e) => digital(sources.digital.map((x, j) => (j === i ? { ...x, enabled: e.currentTarget.checked } : x)))} />
@@ -173,7 +169,8 @@
             aria-label={`Remove ${name}`} title="Remove"><Icon name="trash" size={15} /></button>
         </div>
         {#if isOpen}
-          <div class="body"><AppPicker source={d} onchange={(next) => setSource(i, next)} /></div>
+          <div class="body"><AppPicker source={d} analog={sources.analog}
+            onchange={(next, analog) => onchange({ ...sources, digital: sources.digital.map((x, j) => (j === i ? next : x)), analog })} /></div>
         {/if}
       </li>
     {/each}
@@ -199,7 +196,7 @@
           <button class="toggle" aria-expanded={isOpen} onclick={() => toggle(key)}>
             <span class="chevron"><Icon name="chevron-down" size={16} /></span>
             <span class="what">
-              <span class="name">{a.name || 'Unnamed source'}</span>
+              <span class="name">{a.name || a.value || 'Unnamed source'}</span>
               <span class="sub">{a.entity && a.value ? `${a.entity} · ${trigger(a)}` : 'Not set up yet'}</span>
             </span>
             {#if error}<span class="pill negative">Incomplete</span>{:else if !a.enabled}<span class="state">Off</span>{/if}
@@ -212,10 +209,10 @@
         {#if isOpen}
           <div class="body fields">
             <label class="line"><span>Name</span>
-              <input class="wide" placeholder="Turntable" value={a.name} oninput={(e) => setAnalog(i, { name: e.currentTarget.value })} />
+              <input class="wide" placeholder={a.value || 'Phono'} value={a.name} oninput={(e) => setAnalog(i, { name: e.currentTarget.value })} />
             </label>
             <div class="line"><span>Entity</span>
-              <EntityInput label="Entity" placeholder="Search, or type switch.turntable" value={a.entity}
+              <EntityInput label="Entity" placeholder="Search, or type switch.cd_player" value={a.entity}
                 onchange={(v) => setAnalog(i, { entity: v })} onpick={want} />
             </div>
             <div class="line"><span>Playing when</span>
@@ -244,7 +241,7 @@
   </ul>
   <label class="listen">
     <span class="listen-name">Listen for music when nothing else plays
-      <Tip text="For a turntable or tape deck Home Assistant can’t see. With no source above playing, the mics listen to the room and the display identifies any music it hears. Any digital source playing, in any app, turns it off, so a TV added there stops it. If a few tries in a row find no match (a film, talking), it gives up until the room goes quiet." /></span>
+      <Tip text="For an analog source Home Assistant can’t see. With no source above playing, the mics listen to the room and the display identifies any music it hears. Any digital source playing, in any app, turns it off, so a TV added there stops it. If a few tries in a row find no match (a film, talking), it gives up until the room goes quiet." /></span>
     <span class="spacer"></span>
     <input type="checkbox" checked={sources.listen_for_music} onchange={(e) => onchange({ ...sources, listen_for_music: e.currentTarget.checked })} />
   </label>
