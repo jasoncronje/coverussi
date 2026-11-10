@@ -85,6 +85,15 @@ pub fn post(m: Msg) -> bool {
     QUEUE.get().is_some_and(|q| q.try_send(m).is_ok())
 }
 
+/// Hand the app task a reply it waits for (a recognition's answer, the art),
+/// waiting for room in its queue: dropped, the engine would wait for good.
+/// Not for the app task itself.
+pub fn deliver(m: Msg) {
+    if let Some(q) = QUEUE.get() {
+        let _ = q.send(m);
+    }
+}
+
 pub fn now_playing(v: Value) {
     crate::mqtt::now_playing(&v);
     state().now_playing = v.clone();

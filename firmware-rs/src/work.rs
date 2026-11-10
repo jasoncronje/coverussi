@@ -94,8 +94,9 @@ pub fn start() {
     let _ = JOBS.set(job_tx);
     crate::spawn_in_psram("art", 10 * 1024, move || art_loop(art_rx));
     // The signature's FFT and the TLS handshake both want stack. Nothing here
-    // writes flash: the app task saves the recent songs.
-    crate::spawn_in_psram("recognize", 32 * 1024, move || job_loop(job_rx));
+    // writes flash: the app task saves the recent songs. On core 1: on the
+    // app task's core, fingerprinting a clip starves it.
+    crate::spawn_in_psram_on(Some(1), "recognize", 32 * 1024, move || job_loop(job_rx));
 }
 
 /// A Home Assistant path (/api/media_player_proxy/...) or a URL.
@@ -145,7 +146,7 @@ fn art_loop(rx: Receiver<String>) {
                 }
             },
         };
-        app::post(msg);
+        app::deliver(msg);
     }
 }
 
@@ -172,7 +173,7 @@ fn answered(answer: Value, source: &str, started: Instant) {
         started.elapsed().as_millis()
     );
     live::send(&json!({"type": "recognition", "answer": answer, "source": source, "at": net::unix()}));
-    app::post(Msg::Answer(answer));
+    app::deliver(Msg::Answer(answer));
 }
 
 /// Fingerprints the clip as it records. Shazam is asked at FIRST_TRY_MS; only

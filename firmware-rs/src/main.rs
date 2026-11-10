@@ -69,9 +69,18 @@ fn main() {
 /// never write flash (NVS, OTA): a flash write turns the cache, and with it
 /// PSRAM, off.
 pub fn spawn_in_psram(name: &str, stack: usize, f: impl FnOnce() + Send + 'static) {
+    spawn_in_psram_on(None, name, stack, f);
+}
+
+/// The same, kept on one core. Left to the scheduler, a thread stays on the
+/// core where it first uses floating point, a different one from start to start.
+pub fn spawn_in_psram_on(core: Option<i32>, name: &str, stack: usize, f: impl FnOnce() + Send + 'static) {
     unsafe {
         let mut cfg = sys::esp_pthread_get_default_config();
         cfg.stack_alloc_caps = sys::MALLOC_CAP_SPIRAM | sys::MALLOC_CAP_8BIT;
+        if let Some(core) = core {
+            cfg.pin_to_core = core;
+        }
         sys::esp_pthread_set_cfg(&cfg);
     }
     let spawned = std::thread::Builder::new().name(name.into()).stack_size(stack).spawn(f);
