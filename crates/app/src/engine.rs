@@ -85,7 +85,7 @@ pub struct Engine {
     clock: Option<LocalTime>,
     /// What the idle screen says, while it's up (no art wanted).
     idle: Option<Option<idle::Content>>,
-    /// The film screen's ring as shown.
+    /// The progress screen's ring as shown.
     ring: idle::Ring,
     /// The last song recognised: title, artist.
     song: Option<(String, String)>,
@@ -299,15 +299,15 @@ impl Engine {
         self.idle = None; // the idle screen comes back with a transition
     }
 
-    /// No art: the idle screen, for a video app inside the film's progress ring, redrawn when what it
+    /// No art: the idle screen, for an app on the progress screen inside its progress ring, redrawn when what it
     /// says changes (the minute, a state, the ring, which runs down and fills up for the next video).
     fn show_idle(&mut self, now: Ms) {
-        let content = if self.device.mode() == Mode::Film {
+        let content = if self.device.mode() == Mode::Progress {
             let s = &self.device.settings;
-            let color = s.display.film_color(self.device.source());
-            let mut c = idle::film(&s.idle, &self.ha, self.device.source(), self.clock, color);
-            if let idle::Content::Film { lit, .. } = &mut c {
-                let on = matches!(self.idle, Some(Some(idle::Content::Film { .. })));
+            let color = s.display.progress_color(self.device.source());
+            let mut c = idle::progress(&s.idle, &self.ha, self.device.source(), self.clock, color);
+            if let idle::Content::Progress { lit, .. } = &mut c {
+                let on = matches!(self.idle, Some(Some(idle::Content::Progress { .. })));
                 *lit = self.ring.lit(*lit, now, on);
             }
             Some(c)
@@ -1005,10 +1005,10 @@ mod tests {
     }
 
     #[test]
-    fn a_film_shows_the_film_screen() {
+    fn a_video_app_shows_the_progress_screen() {
         let (mut r, mut e) = (Recorder::default(), engine());
         let mut s = house_settings(); // the idle screen off
-        s.sources.digital[1].film = vec!["Netflix".into()];
+        s.sources.digital[1].progress = vec!["Netflix".into()];
         e.device.set_settings(s);
         e.set_clock(Some(LocalTime { minute: 21 * 60, unix: 1000, ..Default::default() }));
         e.ha_event(&json!({"a": {"media_player.apple_tv": {"s": "playing", "a": {"app_name": "Netflix",
@@ -1019,10 +1019,10 @@ mod tests {
             t += 33;
             e.tick(t, &mut r);
         }
-        assert_eq!(e.telemetry(t)["mode"], "film");
+        assert_eq!(e.telemetry(t)["mode"], "progress");
         let screen = r.last.clone().unwrap();
         assert!(screen.iter().any(|&p| p != 0));
-        // The ring moves on as the film plays.
+        // The ring moves on as it plays.
         e.set_clock(Some(LocalTime { minute: 21 * 60, unix: 1100, ..Default::default() }));
         e.tick(t + 33, &mut r);
         e.tick(t + 66, &mut r);

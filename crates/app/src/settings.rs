@@ -80,13 +80,15 @@ pub struct Display {
     pub record_label: String,
     /// The sheen brightens as the music gets louder.
     pub record_sheen: bool,
-    /// The film screen's ring, `#rrggbb`, for an app with no colour of its own.
-    pub film_ring: String,
+    /// The progress ring, `#rrggbb`, for an app with no colour of its own.
+    #[serde(alias = "film_ring")]
+    pub progress_ring: String,
     /// Each app's ring colour, the first that names the app (as `Settings::app_show` matches it).
-    pub film_colors: Vec<AppColor>,
+    #[serde(alias = "film_colors")]
+    pub progress_colors: Vec<AppColor>,
 }
 
-/// An app's ring colour on the film screen.
+/// An app's colour for the progress ring.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AppColor {
     pub app: String,
@@ -96,7 +98,7 @@ pub struct AppColor {
 
 /// The ring colours a new display starts with: each app's own, made bright and saturated so they
 /// show on the LEDs (deep blues and dark reds barely light up).
-const FILM_COLORS: [(&str, &str); 16] = [
+const PROGRESS_COLORS: [(&str, &str); 16] = [
     ("YouTube", "#ff0000"),
     ("Netflix", "#ff1020"),
     ("Spotify", "#1eff60"),
@@ -157,13 +159,13 @@ impl Display {
         hex(&self.record_label)
     }
 
-    /// The film screen's ring colour for this player's app: its own, else the film ring's.
-    pub fn film_color(&self, p: Option<&Player>) -> [u8; 3] {
+    /// The progress ring's colour for this player's app: its own, else the progress ring's.
+    pub fn progress_color(&self, p: Option<&Player>) -> [u8; 3] {
         let same = |a: &str, b: &str| !b.is_empty() && a.eq_ignore_ascii_case(b);
         let own = p.and_then(|p| {
-            self.film_colors.iter().find(|c| same(&c.app, &p.app_name) || same(&c.app, &p.app_id) || same(&c.app, &p.source))
+            self.progress_colors.iter().find(|c| same(&c.app, &p.app_name) || same(&c.app, &p.app_id) || same(&c.app, &p.source))
         });
-        own.and_then(|c| hex(&c.color)).or_else(|| hex(&self.film_ring)).unwrap_or([255, 138, 31])
+        own.and_then(|c| hex(&c.color)).or_else(|| hex(&self.progress_ring)).unwrap_or([255, 138, 31])
     }
 }
 
@@ -201,22 +203,22 @@ impl Default for Display {
             record_rpm: 33,
             record_label: "#f2b33d".into(),
             record_sheen: true,
-            film_ring: "#ff8a1f".into(),
-            film_colors: FILM_COLORS.iter().map(|(app, color)| AppColor { app: app.to_string(), color: color.to_string() }).collect(),
+            progress_ring: "#ff8a1f".into(),
+            progress_colors: PROGRESS_COLORS.iter().map(|(app, color)| AppColor { app: app.to_string(), color: color.to_string() }).collect(),
         }
     }
 }
 
-/// A smart player that tells Home Assistant what it plays, with artwork; the art shows while it plays.
+/// A smart player that tells Home Assistant what it plays, with artwork; the cover shows while it plays.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DigitalSource {
     pub entity: String,
-    /// Apps or inputs (HA's app_name, app_id or source) that show art.
+    /// Apps or inputs (HA's app_name, app_id or source) that show the cover.
     #[serde(default)]
     pub apps: Vec<String>,
-    /// Apps that show the film screen (Netflix on an Apple TV).
-    #[serde(default)]
-    pub film: Vec<String>,
+    /// Apps that show the progress screen (Netflix on an Apple TV).
+    #[serde(default, alias = "film")]
+    pub progress: Vec<String>,
     /// Apps that show nothing, the player ignored.
     #[serde(default)]
     pub off: Vec<String>,
@@ -235,8 +237,10 @@ pub struct DigitalSource {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppShow {
-    Art,
-    Film,
+    #[serde(alias = "art")]
+    Cover,
+    #[serde(alias = "film")]
+    Progress,
     Off,
 }
 
@@ -437,13 +441,13 @@ impl Settings {
         if d.record_color().is_none() {
             return Err(Invalid(format!("display.record_label: {:?} isn't a colour like #f2b33d", d.record_label)));
         }
-        if hex(&d.film_ring).is_none() {
-            return Err(Invalid(format!("display.film_ring: {:?} isn't a colour like #ff8a1f", d.film_ring)));
+        if hex(&d.progress_ring).is_none() {
+            return Err(Invalid(format!("display.progress_ring: {:?} isn't a colour like #ff8a1f", d.progress_ring)));
         }
-        for (i, c) in d.film_colors.iter().enumerate() {
-            not_empty(&format!("display.film_colors.{i}.app"), &c.app)?;
+        for (i, c) in d.progress_colors.iter().enumerate() {
+            not_empty(&format!("display.progress_colors.{i}.app"), &c.app)?;
             if hex(&c.color).is_none() {
-                return Err(Invalid(format!("display.film_colors.{i}.color: {:?} isn't a colour like #ff0000", c.color)));
+                return Err(Invalid(format!("display.progress_colors.{i}.color: {:?} isn't a colour like #ff0000", c.color)));
             }
         }
         if posix_tz(&d.time_zone).is_none() {
@@ -559,19 +563,24 @@ mod tests {
         assert_eq!(s.display.transition, Transition::FadeBlack);
         assert_eq!(s.display.brightness_night, 40);
         assert_eq!(s.sources.digital[1].apps, ["Music", "Spotify"]);
-        assert!(s.sources.digital[1].film.is_empty() && s.sources.digital[1].other.is_none());
+        assert!(s.sources.digital[1].progress.is_empty() && s.sources.digital[1].other.is_none());
         assert_eq!(s.listening.music_threshold_db, -41.0);
     }
 
     #[test]
-    fn apps_can_show_the_film_screen() {
+    fn apps_can_show_the_progress_screen() {
         let s = parse(json!({"sources": {"digital": [
             {"entity": "media_player.apple_tv", "apps": ["Music"], "film": ["Netflix"], "off": ["YouTube"], "other": "film"}
         ]}}))
         .unwrap();
         let d = &s.sources.digital[0];
-        assert_eq!((d.film.as_slice(), d.off.as_slice(), d.other), (&["Netflix".to_string()][..], &["YouTube".to_string()][..], Some(AppShow::Film)));
+        assert_eq!((d.progress.as_slice(), d.off.as_slice(), d.other), (&["Netflix".to_string()][..], &["YouTube".to_string()][..], Some(AppShow::Progress)));
         assert_eq!(parse(serde_json::to_value(&s).unwrap()).unwrap(), s);
+        // Saved by earlier versions as film and art; saved now as progress and cover.
+        let v = serde_json::to_value(d).unwrap();
+        assert_eq!((&v["progress"][0], &v["other"]), (&json!("Netflix"), &json!("progress")));
+        let old = parse(json!({"sources": {"digital": [{"entity": "media_player.tv", "other": "art"}]}, "display": {"film_ring": "#00ff00"}})).unwrap();
+        assert_eq!((old.sources.digital[0].other, old.display.progress_ring.as_str()), (Some(AppShow::Cover), "#00ff00"));
     }
 
     #[test]
@@ -630,18 +639,18 @@ mod tests {
     }
 
     #[test]
-    fn film_ring_colours() {
+    fn progress_ring_colours() {
         let d = Settings::default().display;
         let p = |app: &str, id: &str| Player { app_name: app.into(), app_id: id.into(), ..Default::default() };
-        assert_eq!(d.film_color(Some(&p("YouTube", ""))), [255, 0, 0]);
-        assert_eq!(d.film_color(Some(&p("", "netflix"))), [255, 16, 32]); // any case, app_name or app_id
-        assert_eq!(d.film_color(Some(&p("Some App", ""))), [255, 138, 31]); // no colour of its own
-        assert_eq!(d.film_color(None), [255, 138, 31]);
-        let s = parse(json!({"display": {"film_ring": "#00ff00", "film_colors": [{"app": "Plex", "color": "#0000FF"}]}})).unwrap();
-        assert_eq!((s.display.film_color(Some(&p("Plex", ""))), s.display.film_color(Some(&p("YouTube", "")))), ([0, 0, 255], [0, 255, 0]));
-        assert!(parse(json!({"display": {"film_ring": "orange"}})).is_err());
-        assert!(parse(json!({"display": {"film_colors": [{"app": "Plex", "color": "blue"}]}})).is_err());
-        assert!(parse(json!({"display": {"film_colors": [{"app": "", "color": "#0000ff"}]}})).is_err());
+        assert_eq!(d.progress_color(Some(&p("YouTube", ""))), [255, 0, 0]);
+        assert_eq!(d.progress_color(Some(&p("", "netflix"))), [255, 16, 32]); // any case, app_name or app_id
+        assert_eq!(d.progress_color(Some(&p("Some App", ""))), [255, 138, 31]); // no colour of its own
+        assert_eq!(d.progress_color(None), [255, 138, 31]);
+        let s = parse(json!({"display": {"progress_ring": "#00ff00", "progress_colors": [{"app": "Plex", "color": "#0000FF"}]}})).unwrap();
+        assert_eq!((s.display.progress_color(Some(&p("Plex", ""))), s.display.progress_color(Some(&p("YouTube", "")))), ([0, 0, 255], [0, 255, 0]));
+        assert!(parse(json!({"display": {"progress_ring": "orange"}})).is_err());
+        assert!(parse(json!({"display": {"progress_colors": [{"app": "Plex", "color": "blue"}]}})).is_err());
+        assert!(parse(json!({"display": {"progress_colors": [{"app": "", "color": "#0000ff"}]}})).is_err());
     }
 
     #[test]

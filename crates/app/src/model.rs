@@ -100,17 +100,17 @@ impl Settings {
 
     /// What this player's current app or input shows: the list it's on, else the source's `other`.
     pub fn app_show(&self, p: &Player) -> AppShow {
-        let Some(d) = self.sources.digital.iter().find(|d| d.entity == p.entity) else { return AppShow::Art };
+        let Some(d) = self.sources.digital.iter().find(|d| d.entity == p.entity) else { return AppShow::Cover };
         let same = |a: &str, b: &str| !b.is_empty() && a.eq_ignore_ascii_case(b);
         let listed = |list: &[String]| list.iter().any(|a| same(a, &p.app_name) || same(a, &p.app_id) || same(a, &p.source));
-        if listed(&d.film) {
-            AppShow::Film
+        if listed(&d.progress) {
+            AppShow::Progress
         } else if listed(&d.off) {
             AppShow::Off
         } else if listed(&d.apps) {
-            if d.exclude { AppShow::Off } else { AppShow::Art }
+            if d.exclude { AppShow::Off } else { AppShow::Cover }
         } else {
-            d.other.unwrap_or(if d.apps.is_empty() || d.exclude { AppShow::Art } else { AppShow::Off })
+            d.other.unwrap_or(if d.apps.is_empty() || d.exclude { AppShow::Cover } else { AppShow::Off })
         }
     }
 }
@@ -131,8 +131,8 @@ pub enum Mode {
     Off,
     Digital,
     Analog,
-    /// A video app: the film screen, no art.
-    Film,
+    /// An app on the progress screen, no cover.
+    Progress,
 }
 
 impl Mode {
@@ -141,7 +141,7 @@ impl Mode {
             Mode::Off => "off",
             Mode::Digital => "digital",
             Mode::Analog => "analog",
-            Mode::Film => "film",
+            Mode::Progress => "progress",
         }
     }
 }
@@ -614,12 +614,12 @@ impl Device {
                 return (Mode::Analog, Some(p), Some(i));
             }
         }
-        // A film counts as playing and naming what it plays even paused or between videos, so the TV's
+        // An app on the progress screen counts as playing and naming what it plays even paused or between videos, so the TV's
         // sound on the WiiM ("Unknown" on HDMI) doesn't take the screen while the next one loads.
         let rank = |q: &Player, show: AppShow| {
-            let film = show == AppShow::Film;
-            (if q.playing() || film { 4 } else { 0 })
-                + (if q.has_song() || film { 2 } else { 0 })
+            let progress = show == AppShow::Progress;
+            (if q.playing() || progress { 4 } else { 0 })
+                + (if q.has_song() || progress { 2 } else { 0 })
                 + (if q.picture.is_empty() { 0 } else { 1 })
         };
         let mut best: Option<(&Player, AppShow)> = None;
@@ -646,7 +646,7 @@ impl Device {
             }
         }
         if let Some((p, show)) = best {
-            return (if show == AppShow::Film { Mode::Film } else { Mode::Digital }, Some(p), None);
+            return (if show == AppShow::Progress { Mode::Progress } else { Mode::Digital }, Some(p), None);
         }
         // Nothing playing that Home Assistant knows of: listen to the room.
         let mode = if self.settings.sources.listen_for_music && !any_playing { Mode::Analog } else { Mode::Off };
@@ -698,8 +698,8 @@ impl Device {
             }
         }
         self.picture_missing_since = 0;
-        // A film shows the film screen, not its poster.
-        self.art = if self.mode == Mode::Film { String::new() } else { picture };
+        // An app on the progress screen shows the progress screen, not its poster.
+        self.art = if self.mode == Mode::Progress { String::new() } else { picture };
     }
 
     pub fn set_panel(&mut self, on: bool) {
@@ -803,7 +803,7 @@ pub(crate) mod tests {
 
     fn digital(entity: &str, apps: &[&str]) -> DigitalSource {
         let apps = apps.iter().map(|a| a.to_string()).collect();
-        DigitalSource { entity: entity.into(), apps, film: vec![], off: vec![], exclude: false, other: None, enabled: true }
+        DigitalSource { entity: entity.into(), apps, progress: vec![], off: vec![], exclude: false, other: None, enabled: true }
     }
 
     fn analog(name: &str, entity: &str, attribute: &str, value: &str) -> AnalogSource {
@@ -923,28 +923,28 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn video_apps_show_the_film_screen() {
+    fn video_apps_show_the_progress_screen() {
         let mut s = Settings::default();
-        s.sources.digital = vec![DigitalSource { film: vec!["Netflix".into()], ..digital("media_player.apple_tv", &["Music"]) }];
+        s.sources.digital = vec![DigitalSource { progress: vec!["Netflix".into()], ..digital("media_player.apple_tv", &["Music"]) }];
         let mut d = Device::default();
         d.set_settings(s.clone());
         let mut tv = player("media_player.apple_tv", "playing", "", "/poster.jpg");
         tv.app_name = "netflix".into(); // any case
         d.player(tv.clone(), 1000);
         d.update(1000);
-        assert_eq!((d.mode(), d.art()), (Mode::Film, "")); // no poster
+        assert_eq!((d.mode(), d.art()), (Mode::Progress, "")); // no poster
         assert_eq!(d.source().unwrap().entity, "media_player.apple_tv");
         // Older settings: an app on no list shows nothing when there's an art list...
         tv.app_name = "YouTube".into();
         d.player(tv.clone(), 2000);
         d.update(2000);
         assert_eq!(d.mode(), Mode::Off);
-        // ...and every other app can be sent to the film screen, or to art.
-        s.sources.digital[0].other = Some(AppShow::Film);
+        // ...and every other app can be sent to the progress screen, or to its cover.
+        s.sources.digital[0].other = Some(AppShow::Progress);
         d.set_settings(s.clone());
         d.update(2000);
-        assert_eq!(d.mode(), Mode::Film);
-        s.sources.digital[0].other = Some(AppShow::Art);
+        assert_eq!(d.mode(), Mode::Progress);
+        s.sources.digital[0].other = Some(AppShow::Cover);
         s.sources.digital[0].off = vec!["YouTube".into()];
         d.set_settings(s.clone());
         d.update(2000);
@@ -956,12 +956,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_film_keeps_the_screen_between_videos() {
+    fn the_progress_screen_stays_between_videos() {
         // The WiiM plays the TV's sound on HDMI, "Unknown" with a picture, above the Apple TV on the list.
         let mut s = Settings::default();
         s.sources.digital = vec![
             DigitalSource { exclude: true, ..digital("media_player.wiim", &["Phono"]) },
-            DigitalSource { film: vec!["YouTube".into()], ..digital("media_player.apple_tv", &[]) },
+            DigitalSource { progress: vec!["YouTube".into()], ..digital("media_player.apple_tv", &[]) },
         ];
         let mut d = Device::default();
         d.set_settings(s);
@@ -973,14 +973,14 @@ pub(crate) mod tests {
         tv.title = "A video".into();
         d.player(tv.clone(), 1000);
         d.update(1000);
-        assert_eq!(d.mode(), Mode::Film);
-        // Paused, then playing the next one before its title comes: still the film.
+        assert_eq!(d.mode(), Mode::Progress);
+        // Paused, then playing the next one before its title comes: still the progress screen.
         for (state, title, at) in [("paused", "A video", 2000), ("idle", "", 3000), ("playing", "", 4000)] {
             tv.state = state.into();
             tv.title = title.into();
             d.player(tv.clone(), at);
             d.update(at);
-            assert_eq!((d.mode(), d.source().unwrap().entity.as_str()), (Mode::Film, "media_player.apple_tv"), "{state}");
+            assert_eq!((d.mode(), d.source().unwrap().entity.as_str()), (Mode::Progress, "media_player.apple_tv"), "{state}");
         }
     }
 
@@ -988,17 +988,17 @@ pub(crate) mod tests {
     fn older_app_lists_read_as_before() {
         let tv = |app: &str| Player { entity: "media_player.tv".into(), app_name: app.into(), ..Default::default() };
         let mut s = Settings::default();
-        assert_eq!(s.app_show(&tv("Netflix")), AppShow::Art); // not a source: art
+        assert_eq!(s.app_show(&tv("Netflix")), AppShow::Cover); // not a source: art
         s.sources.digital = vec![digital("media_player.tv", &[])];
-        assert_eq!(s.app_show(&tv("Netflix")), AppShow::Art);
+        assert_eq!(s.app_show(&tv("Netflix")), AppShow::Cover);
         s.sources.digital = vec![digital("media_player.tv", &["Music"])];
-        assert_eq!((s.app_show(&tv("Music")), s.app_show(&tv("Netflix"))), (AppShow::Art, AppShow::Off));
+        assert_eq!((s.app_show(&tv("Music")), s.app_show(&tv("Netflix"))), (AppShow::Cover, AppShow::Off));
         s.sources.digital[0].exclude = true;
-        assert_eq!((s.app_show(&tv("Music")), s.app_show(&tv("Netflix"))), (AppShow::Off, AppShow::Art));
+        assert_eq!((s.app_show(&tv("Music")), s.app_show(&tv("Netflix"))), (AppShow::Off, AppShow::Cover));
     }
 
     #[test]
-    fn film_position_runs_while_playing() {
+    fn progress_position_runs_while_playing() {
         let mut p = player("media_player.apple_tv", "playing", "", "");
         assert_eq!(p.position_now(1000.0), None);
         (p.position, p.position_at, p.duration) = (Some(600.0), Some(1000.0), Some(3600.0));

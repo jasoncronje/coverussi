@@ -1,4 +1,4 @@
-export type Mode = 'off' | 'digital' | 'analog' | 'film';
+export type Mode = 'off' | 'digital' | 'analog' | 'progress';
 export type ListenerState = 'quiet' | 'listening' | 'playing';
 
 export interface Telemetry {
@@ -82,15 +82,15 @@ export interface Song {
   shazam_album?: string | null; // what a correction is keyed on
 }
 
-/** What a digital source's app shows: its art, the film screen, or nothing. */
-export type AppShow = 'art' | 'film' | 'off';
+/** What a digital source's app shows: its cover, the progress screen, or nothing. */
+export type AppShow = 'cover' | 'progress' | 'off';
 
-/** A smart player that tells Home Assistant what it plays; each app or input can show art, the film screen or nothing. */
+/** A smart player that tells Home Assistant what it plays; each app or input can show its cover, the progress screen or nothing. */
 export interface DigitalSource {
   entity: string;
-  /** Apps that show art. */
+  /** Apps that show their cover. */
   apps: string[];
-  film?: string[];
+  progress?: string[];
   off?: string[];
   /** Older settings: the apps listed don't show art; every other one does. */
   exclude?: boolean;
@@ -144,8 +144,8 @@ export interface Settings {
     record_rpm: 33 | 45 | 78;
     record_label: string; // #rrggbb
     record_sheen: boolean;
-    film_ring: string; // #rrggbb, for apps with no colour of their own
-    film_colors: { app: string; color: string }[];
+    progress_ring: string; // #rrggbb, for apps with no colour of their own
+    progress_colors: { app: string; color: string }[];
   };
   sources: { digital: DigitalSource[]; analog: AnalogSource[]; listen_for_music: boolean };
   listening: {

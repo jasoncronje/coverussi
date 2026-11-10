@@ -6,7 +6,7 @@
   import Broker from './Broker.svelte';
   import Calibrate from './Calibrate.svelte';
   import DevicePage from './Device.svelte';
-  import FilmColors from './FilmColors.svelte';
+  import ProgressColors from './ProgressColors.svelte';
   import IdleScreen from './IdleScreen.svelte';
   import Password, { PASSWORD_MIN } from './Password.svelte';
   import { session } from '../lib/session.svelte';
@@ -127,8 +127,8 @@
       ]
     },
     {
-      id: 'film', area: 'display', key: 'display', title: 'Film screen', custom: true, fields: [],
-      tip: 'The ring round the edge of the film screen fills as a video plays. Each app can light it in its own colour; apps not listed use the ring colour.'
+      id: 'progress', area: 'display', key: 'display', title: 'Progress ring', custom: true, fields: [],
+      tip: 'The ring round the edge of the progress screen fills as a video or song plays. Each app can light it in its own colour; apps not listed use the ring colour.'
     },
     {
       id: 'idle', area: 'display', key: 'idle', title: 'When nothing plays', custom: true, fields: [],
@@ -142,7 +142,7 @@
     },
     {
       id: 'digital', area: 'sources', key: 'sources', title: 'Digital sources', custom: true, fields: [],
-      tip: 'Smart players that tell Home Assistant what’s playing, like a streamer or an Apple TV. Their cover shows while they play; per app, pick art, the film screen (the time and how far into the film) or nothing. When several play, the highest on the list shows: drag to reorder.'
+      tip: 'Smart players that tell Home Assistant what’s playing, like a streamer or an Apple TV. Their cover shows while they play; per app, pick its cover, the progress screen (a ring round the edge that fills as it plays) or nothing. When several play, the highest on the list shows: drag to reorder.'
     },
     {
       id: 'analog', area: 'sources', key: 'sources', title: 'Analog sources', custom: true, fields: [],
@@ -381,8 +381,8 @@
           <Broker bind:address={brokerAddress} bind:username={brokerUser} bind:password={brokerPassword}
             passwordSet={broker.password_set} status={brokerStatus} />
         {/if}
-        {#if g.id === 'film'}
-          <FilmColors display={draft.display}
+        {#if g.id === 'progress'}
+          <ProgressColors display={draft.display}
             onchange={(d) => { draft!.display = d; saved = ''; }} />
         {/if}
         {#if g.id === 'idle'}

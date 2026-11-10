@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   // Lists a player's apps or inputs (read from Home Assistant by the device, so a
-  // player added but not saved yet works) so each can show art, the film screen or nothing.
+  // player added but not saved yet works) so each can show its cover, the progress screen or nothing.
   import { api } from '../lib/api';
   import { appShow, otherShow, setAppShow, setOtherShow } from '../lib/apps';
   import Icon from '../lib/Icon.svelte';
@@ -35,14 +35,14 @@
   });
 
   const SHOWS: { value: AppShow; label: string }[] = [
-    { value: 'art', label: 'Art' }, { value: 'film', label: 'Film' }, { value: 'off', label: 'Off' },
+    { value: 'cover', label: 'Cover' }, { value: 'progress', label: 'Progress' }, { value: 'off', label: 'Off' },
   ];
   const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   const current = $derived(result?.app_name || result?.source || '');
   // Every app HA lists, then the one open now, then picks this player doesn't list.
   const apps = $derived.by(() => {
     const out: string[] = [];
-    const picked = [...source.apps, ...(source.film ?? []), ...(source.off ?? [])];
+    const picked = [...source.apps, ...(source.progress ?? []), ...(source.off ?? [])];
     for (const a of [...(result?.apps ?? []), current, ...picked]) if (a && !out.some((o) => same(o, a))) out.push(a);
     return out;
   });
@@ -71,7 +71,7 @@
     if (!result) return '';
     if (!result.apps.length) return 'Home Assistant lists no apps or inputs for this player.';
     const count = (show: AppShow) => apps.filter((a) => appShow(source, a) === show).length;
-    return `${count('art')} art · ${count('film')} film · ${count('off')} off`;
+    return `${count('cover')} cover · ${count('progress')} progress · ${count('off')} off`;
   });
 </script>
 

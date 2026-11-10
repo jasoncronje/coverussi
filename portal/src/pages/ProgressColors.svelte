@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The film screen's ring colour, and each app's own: matched like the app lists,
+  // The progress ring's colour, and each app's own: matched like the app lists,
   // by Home Assistant's app name, app id or source, any case. The first that names the app wins.
   import Icon from '../lib/Icon.svelte';
   import type { Settings } from '../lib/types';
@@ -8,31 +8,31 @@
   let { display, onchange }: { display: Display; onchange: (d: Display) => void } = $props();
 
   const set = (d: Partial<Display>) => onchange({ ...display, ...d });
-  const setApp = (n: number, c: Partial<Display['film_colors'][number]>) =>
-    set({ film_colors: display.film_colors.map((x, j) => (j === n ? { ...x, ...c } : x)) });
+  const setApp = (n: number, c: Partial<Display['progress_colors'][number]>) =>
+    set({ progress_colors: display.progress_colors.map((x, j) => (j === n ? { ...x, ...c } : x)) });
 </script>
 
 <label class="field">
   <span class="name">Ring colour</span>
-  <input type="color" value={display.film_ring} oninput={(e) => set({ film_ring: e.currentTarget.value })} />
+  <input type="color" value={display.progress_ring} oninput={(e) => set({ progress_ring: e.currentTarget.value })} />
 </label>
 
 <ul class="list">
-  {#each display.film_colors as c, n}
+  {#each display.progress_colors as c, n}
     <li class="row">
       <input class="app" aria-label="App" placeholder="App, like YouTube" value={c.app}
         oninput={(e) => setApp(n, { app: e.currentTarget.value })} />
       <input type="color" aria-label="{c.app || 'App'} colour" value={c.color}
         oninput={(e) => setApp(n, { color: e.currentTarget.value })} />
-      <button class="remove" onclick={() => set({ film_colors: display.film_colors.filter((_, j) => j !== n) })}
+      <button class="remove" onclick={() => set({ progress_colors: display.progress_colors.filter((_, j) => j !== n) })}
         aria-label="Remove {c.app || 'app'}" title="Remove"><Icon name="trash" size={15} /></button>
       {#if !c.app.trim()}<p class="error small">Name the app as Home Assistant does, like YouTube.</p>{/if}
     </li>
   {/each}
 </ul>
 <div class="add">
-  <span class="muted small">{display.film_colors.length} apps</span>
-  <button onclick={() => set({ film_colors: [...display.film_colors, { app: '', color: display.film_ring }] })}>
+  <span class="muted small">{display.progress_colors.length} apps</span>
+  <button onclick={() => set({ progress_colors: [...display.progress_colors, { app: '', color: display.progress_ring }] })}>
     <Icon name="plus" size={15} />Add app</button>
 </div>
 
