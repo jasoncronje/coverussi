@@ -85,6 +85,8 @@ pub struct Engine {
     clock: Option<LocalTime>,
     /// What the idle screen says, while it's up (no art wanted).
     idle: Option<Option<idle::Content>>,
+    /// The film screen's ring as shown.
+    ring: idle::Ring,
     /// The last song recognised: title, artist.
     song: Option<(String, String)>,
     panel: PanelState,
@@ -117,6 +119,7 @@ impl Default for Engine {
             local_min: 12 * 60,
             clock: None,
             idle: None,
+            ring: idle::Ring::default(),
             song: None,
             panel: PanelState::default(),
         }
@@ -297,10 +300,15 @@ impl Engine {
     }
 
     /// No art: the idle screen, for a video app inside the film's progress ring, redrawn when what it
-    /// says changes (the minute, a state, the ring).
+    /// says changes (the minute, a state, the ring, which runs down and fills up for the next video).
     fn show_idle(&mut self, now: Ms) {
         let content = if self.device.mode() == Mode::Film {
-            Some(idle::film(&self.device.settings.idle, &self.ha, self.device.source(), self.clock))
+            let mut c = idle::film(&self.device.settings.idle, &self.ha, self.device.source(), self.clock);
+            if let idle::Content::Film { lit, .. } = &mut c {
+                let on = matches!(self.idle, Some(Some(idle::Content::Film { .. })));
+                *lit = self.ring.lit(*lit, now, on);
+            }
+            Some(c)
         } else {
             idle::content(&self.device.settings.idle, &self.ha, self.clock)
         };

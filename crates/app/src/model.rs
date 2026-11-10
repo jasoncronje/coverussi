@@ -614,8 +614,13 @@ impl Device {
                 return (Mode::Analog, Some(p), Some(i));
             }
         }
-        let rank = |q: &Player| {
-            (if q.playing() { 4 } else { 0 }) + (if q.has_song() { 2 } else { 0 }) + (if q.picture.is_empty() { 0 } else { 1 })
+        // A film counts as playing and naming what it plays even paused or between videos, so the TV's
+        // sound on the WiiM ("Unknown" on HDMI) doesn't take the screen while the next one loads.
+        let rank = |q: &Player, show: AppShow| {
+            let film = show == AppShow::Film;
+            (if q.playing() || film { 4 } else { 0 })
+                + (if q.has_song() || film { 2 } else { 0 })
+                + (if q.picture.is_empty() { 0 } else { 1 })
         };
         let mut best: Option<(&Player, AppShow)> = None;
         let mut any_playing = false; // in any app, even one that shows nothing (a TV on Netflix)
@@ -635,7 +640,7 @@ impl Device {
             // Playing beats paused, then naming a song beats "Unknown", then having a
             // picture beats none (the WiiM on its TV input plays with no song while the
             // Apple TV has one); among equals, the one higher on the list.
-            let better = best.is_none_or(|(b, _)| rank(p) > rank(b));
+            let better = best.is_none_or(|(b, s)| rank(p, show) > rank(b, s));
             if better {
                 best = Some((p, show));
             }
@@ -948,6 +953,35 @@ pub(crate) mod tests {
         d.player(tv, 3000);
         d.update(3000);
         assert_eq!((d.mode(), d.art()), (Mode::Digital, "/poster.jpg"));
+    }
+
+    #[test]
+    fn a_film_keeps_the_screen_between_videos() {
+        // The WiiM plays the TV's sound on HDMI, "Unknown" with a picture, above the Apple TV on the list.
+        let mut s = Settings::default();
+        s.sources.digital = vec![
+            DigitalSource { exclude: true, ..digital("media_player.wiim", &["Phono"]) },
+            DigitalSource { film: vec!["YouTube".into()], ..digital("media_player.apple_tv", &[]) },
+        ];
+        let mut d = Device::default();
+        d.set_settings(s);
+        let mut wiim = player("media_player.wiim", "playing", "HDMI", "/hdmi.jpg");
+        wiim.title = "Unknown".into();
+        d.player(wiim, 1000);
+        let mut tv = player("media_player.apple_tv", "playing", "", "/thumb.jpg");
+        tv.app_name = "YouTube".into();
+        tv.title = "A video".into();
+        d.player(tv.clone(), 1000);
+        d.update(1000);
+        assert_eq!(d.mode(), Mode::Film);
+        // Paused, then playing the next one before its title comes: still the film.
+        for (state, title, at) in [("paused", "A video", 2000), ("idle", "", 3000), ("playing", "", 4000)] {
+            tv.state = state.into();
+            tv.title = title.into();
+            d.player(tv.clone(), at);
+            d.update(at);
+            assert_eq!((d.mode(), d.source().unwrap().entity.as_str()), (Mode::Film, "media_player.apple_tv"), "{state}");
+        }
     }
 
     #[test]

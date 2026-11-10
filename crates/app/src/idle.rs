@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::art::{Rgb, SIZE};
 use crate::ha::HaStates;
-use crate::model::Player;
+use crate::model::{Ms, Player};
 use crate::settings::{Idle, IdleShow};
 
 /// The local time, once the clock is set.
@@ -129,6 +129,46 @@ pub fn film(idle: &Idle, ha: &HaStates, p: Option<&Player>, clock: Option<LocalT
         _ => 0,
     };
     Content::Film { screen: Box::new(screen), lit }
+}
+
+/// When the ring goes back (the next video, the start again), it runs down to nothing, then fills
+/// up to where the new one is.
+const DRAIN_MS: Ms = 600;
+const FILL_MS: Ms = 800;
+
+/// The ring as the panel shows it, running down and filling up again rather than jumping back.
+#[derive(Default)]
+pub struct Ring {
+    shown: u32,
+    /// When it started running down, and from how many pixels.
+    drain: Option<(Ms, u32)>,
+}
+
+impl Ring {
+    /// The lit pixels to show for the film's `lit` now; `on` is whether the film screen is already up.
+    pub fn lit(&mut self, lit: u32, now: Ms, on: bool) -> u32 {
+        if !on {
+            self.drain = None;
+        }
+        // Filling up follows the film, so only a ring at rest runs down.
+        if on && self.drain.is_none() && lit + 2 < self.shown {
+            self.drain = Some((now, self.shown));
+        }
+        let ease = |t: f32| t * t * (3.0 - 2.0 * t);
+        self.shown = match self.drain {
+            Some((at, from)) if now - at < DRAIN_MS => {
+                (from as f32 * (1.0 - ease((now - at) as f32 / DRAIN_MS as f32))) as u32
+            }
+            Some((at, _)) if now - at < DRAIN_MS + FILL_MS => {
+                (lit as f32 * ease((now - at - DRAIN_MS) as f32 / FILL_MS as f32)) as u32
+            }
+            _ => {
+                self.drain = None;
+                lit
+            }
+        };
+        self.shown
+    }
 }
 
 /// The border pixel `i` steps clockwise from the top middle.
@@ -821,6 +861,21 @@ mod tests {
         assert!(cut.starts_with("A VERY LONG") && Font::Small.width(&cut, 1) <= 60 && Font::Small.width(&cut, 1) > 55, "{cut}");
         assert_eq!(Font::Big.width("1", 1), 5);
         assert_eq!(Font::Big.width("I", 1), 3);
+    }
+
+    #[test]
+    fn the_ring_runs_down_and_fills_up_again() {
+        let mut r = Ring::default();
+        assert_eq!(r.lit(200, 0, false), 200); // coming up: as it is
+        assert_eq!(r.lit(201, 100, true), 201);
+        // The next video, at the start: down from 201 to nothing, then up to it.
+        let down: Vec<u32> = (0..=6).map(|i| r.lit(0, 1000 + i * 100, true)).collect();
+        assert!(down.windows(2).all(|w| w[1] <= w[0]) && down[0] == 201 && down[6] == 0, "{down:?}");
+        let up: Vec<u32> = (1..=8).map(|i| r.lit(40, 1600 + i * 100, true)).collect();
+        assert!(up.windows(2).all(|w| w[1] >= w[0]) && up[7] == 40, "{up:?}");
+        assert_eq!(r.lit(41, 3000, true), 41);
+        // Off the film screen and back: no run down.
+        assert_eq!(r.lit(5, 3100, false), 5);
     }
 
     #[test]
