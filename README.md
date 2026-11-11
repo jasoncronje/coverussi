@@ -22,7 +22,7 @@ The display follows the players and inputs you pick there, shows up in it as a l
 
 Everything runs on the board, the web app too.
 
-<img src="docs/images/portal.png" alt="The Coverussi portal in a browser and on a phone, showing the record playing and the panel mirror">
+<img src="docs/images/portal.png" alt="The Coverussi web app in a browser and on a phone, showing the panel mirror and what played recently">
 
 ## What you need
 
