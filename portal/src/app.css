@@ -1,5 +1,5 @@
 /* True-black flat: the page is black like an unlit panel, cards are one lightness step up, and the
-   only hue is amber, kept for data (the mic level, the playing state, the panel's own art). */
+   only hue is the logo's pink, kept for data (the mic level, the playing state, the panel's own art). */
 :root {
   --ground: #000000;
   --surface: #111111;
@@ -10,7 +10,7 @@
   --text: #ffffff;
   --muted: #b4b4b4;
   --faint: #949494;
-  --accent: #f2b33d;
+  --accent: #e94f95;
   --positive: #3fc07a;
   --negative: #e5566f;
   --warning: #e5a93b;

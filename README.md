@@ -1,4 +1,4 @@
-<h1><img src="docs/logo/wordmark.svg" alt="Coverussi" width="560"></h1>
+<h1><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo/coverussi-dark.svg"><img src="docs/logo/coverussi-light.svg" alt="Coverussi" width="420"></picture></h1>
 
 A 64 × 64 LED panel that shows the album cover of whatever you're playing, records included.
 

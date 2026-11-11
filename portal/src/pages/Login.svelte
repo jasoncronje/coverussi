@@ -22,7 +22,7 @@
 </script>
 
 <form class="card" onsubmit={submit}>
-  <h1><img src="/wordmark.svg" alt="Coverussi" /></h1>
+  <h1><img src="/logo.svg" alt="Coverussi" /></h1>
   <label>
     <span>Password</span>
     <!-- svelte-ignore a11y_autofocus -->

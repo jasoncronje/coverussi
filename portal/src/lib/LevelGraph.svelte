@@ -10,7 +10,7 @@
   const LO = -90, HI = 0;
   const TICKS = [-90, -60, -30, 0];
   const LANE = 34; // the y labels' own lane, so no label sits on the line
-  const ACCENT = '#f2b33d', GRID = '#2b2b2b', REF = '#8a8a8a', LABEL = '#949494', SURFACE = '#111111';
+  const ACCENT = '#e94f95', GRID = '#2b2b2b', REF = '#8a8a8a', LABEL = '#949494', SURFACE = '#111111';
 
   $effect(() => {
     void live.levelTick;

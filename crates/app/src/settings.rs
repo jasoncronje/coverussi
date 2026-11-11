@@ -201,7 +201,7 @@ impl Default for Display {
             song_text_s: 6,
             record: true,
             record_rpm: 33,
-            record_label: "#f2b33d".into(),
+            record_label: "#5d2ca6".into(),
             record_sheen: true,
             progress_ring: "#ff8a1f".into(),
             progress_colors: PROGRESS_COLORS.iter().map(|(app, color)| AppColor { app: app.to_string(), color: color.to_string() }).collect(),
@@ -460,7 +460,7 @@ impl Settings {
             return Err(Invalid(format!("display.record_rpm: {} isn't 33, 45 or 78", d.record_rpm)));
         }
         if d.record_color().is_none() {
-            return Err(Invalid(format!("display.record_label: {:?} isn't a colour like #f2b33d", d.record_label)));
+            return Err(Invalid(format!("display.record_label: {:?} isn't a colour like #5d2ca6", d.record_label)));
         }
         if hex(&d.progress_ring).is_none() {
             return Err(Invalid(format!("display.progress_ring: {:?} isn't a colour like #ff8a1f", d.progress_ring)));
@@ -651,7 +651,7 @@ mod tests {
     #[test]
     fn song_screen_and_record() {
         let d = Settings::default().display;
-        assert_eq!((d.song_screen, d.song_cover_s, d.song_text_s, d.record_turn_ms(), d.record_color()), (true, 20, 6, 1800, Some([242, 179, 61])));
+        assert_eq!((d.song_screen, d.song_cover_s, d.song_text_s, d.record_turn_ms(), d.record_color()), (true, 20, 6, 1800, Some([93, 44, 166])));
         let s = parse(json!({"display": {"record_rpm": 45, "record_label": "#FF0080"}})).unwrap();
         assert_eq!((s.display.record_turn_ms(), s.display.record_color()), (1333, Some([255, 0, 128])));
         assert!(parse(json!({"display": {"record_rpm": 16}})).is_err());

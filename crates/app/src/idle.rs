@@ -28,8 +28,8 @@ pub const MAX_ENTITIES: usize = 4;
 
 const WHITE: [u8; 3] = [255, 255, 255];
 const GRAY: [u8; 3] = [150, 150, 150];
-/// The wordmark's amber (scripts/logo.py).
-const AMBER: [u8; 3] = [242, 179, 61];
+/// The logo's pink (docs/logo).
+const PINK: [u8; 3] = [233, 79, 149];
 /// An unlit LED in the wordmark's style.
 const UNLIT: [u8; 3] = [38, 38, 38];
 /// An update that failed.
@@ -280,7 +280,7 @@ const SWEEP_MS: u64 = 1400;
 /// The start-up screen `t` ms in: the wordmark, a bar sweeping until it's ready, and what it waits for.
 pub fn boot(stage: Boot, t: u64) -> Box<Rgb> {
     let mut p = wordmark();
-    p.bar(if stage == Boot::Ready { BAR.0..BAR.1 } else { sweep(t) }, AMBER);
+    p.bar(if stage == Boot::Ready { BAR.0..BAR.1 } else { sweep(t) }, PINK);
     let label = match stage {
         Boot::WiFi => "WI-FI",
         Boot::HomeAssistant => "HOME ASSISTANT",
@@ -307,9 +307,9 @@ pub fn update(stage: Update, t: u64) -> Box<Rgb> {
     let mut p = wordmark();
     let (left, right, _) = BAR;
     let (lit, color) = match stage {
-        Update::Starting => (sweep(t), AMBER),
-        Update::Downloading(pct) => (left..left + (right - left) * pct.min(100) as i32 / 100, AMBER),
-        Update::Restarting => (left..right, AMBER),
+        Update::Starting => (sweep(t), PINK),
+        Update::Downloading(pct) => (left..left + (right - left) * pct.min(100) as i32 / 100, PINK),
+        Update::Restarting => (left..right, PINK),
         Update::Failed => (left..right, RED),
     };
     p.bar(lit, color);
@@ -323,11 +323,11 @@ pub fn update(stage: Update, t: u64) -> Box<Rgb> {
     p.0
 }
 
-/// "COVER" amber and "USSI" white, across the top half.
+/// "COVER" pink and "USSI" white, across the top half.
 fn wordmark() -> Canvas {
     let mut p = Canvas(Box::new([0; SIZE * SIZE * 3]));
     let x = (SIZE as i32 - Font::Big.width("COVERUSSI", 1)) / 2;
-    p.text("COVER", Font::Big, 1, x, 18, AMBER);
+    p.text("COVER", Font::Big, 1, x, 18, PINK);
     p.text("USSI", Font::Big, 1, x + Font::Big.width("COVER", 1) + 1, 18, WHITE);
     p
 }
@@ -729,7 +729,7 @@ mod tests {
 
     fn lit_bar(rgb: &Rgb) -> Vec<i32> {
         let (left, right, top) = BAR;
-        (left..right).filter(|&x| px(rgb, x as usize, top as usize) == AMBER).collect()
+        (left..right).filter(|&x| px(rgb, x as usize, top as usize) == PINK).collect()
     }
 
     #[test]
@@ -737,10 +737,10 @@ mod tests {
         let (left, right, top) = BAR;
         let lit = |rgb: &Rgb, c: [u8; 3]| (left..right).filter(|&x| px(rgb, x as usize, top as usize) == c).count();
         assert_eq!(lit_bar(&update(Update::Starting, 0)), (14..24).collect::<Vec<_>>()); // sweeps like start-up
-        assert_eq!(lit(&update(Update::Downloading(0), 0), AMBER), 0);
-        assert_eq!(lit(&update(Update::Downloading(50), 0), AMBER), 18);
-        assert_eq!(lit(&update(Update::Downloading(100), 0), AMBER), 36);
-        assert_eq!(lit(&update(Update::Restarting, 0), AMBER), 36);
+        assert_eq!(lit(&update(Update::Downloading(0), 0), PINK), 0);
+        assert_eq!(lit(&update(Update::Downloading(50), 0), PINK), 18);
+        assert_eq!(lit(&update(Update::Downloading(100), 0), PINK), 36);
+        assert_eq!(lit(&update(Update::Restarting, 0), PINK), 36);
         assert_eq!(lit(&update(Update::Failed, 0), RED), 36);
         // The percentage is written out, so 41% and 42% differ.
         assert_ne!(update(Update::Downloading(41), 0), update(Update::Downloading(42), 0));
@@ -754,26 +754,26 @@ mod tests {
         assert_eq!(lit_bar(&half), (40..50).collect::<Vec<_>>()); // the far end
         assert_eq!(lit_bar(&boot(Boot::WiFi, SWEEP_MS)), lit_bar(&start)); // and back
         assert_eq!(lit_bar(&boot(Boot::Ready, 123)).len(), 36); // all of it
-        // The wordmark: COVER amber, USSI white, all on the panel.
+        // The wordmark: COVER pink, USSI white, all on the panel.
         let lit = |c: [u8; 3]| (0..SIZE).flat_map(|y| (0..SIZE).map(move |x| (x, y))).filter(|&(x, y)| px(&start, x, y) == c).count();
-        assert!(lit(AMBER) > 40 && lit(WHITE) > 30);
+        assert!(lit(PINK) > 40 && lit(WHITE) > 30);
         assert_ne!(boot(Boot::WiFi, 0), boot(Boot::HomeAssistant, 0)); // says what it waits for
     }
 
     #[test]
     fn record_turns() {
-        let a = record(0, 1800, AMBER, 0.5);
+        let a = record(0, 1800, PINK, 0.5);
         assert_eq!(px(&a, 0, 0), [0, 0, 0]); // the corners are off the record
         assert_eq!(px(&a, 31, 31), [0, 0, 0]); // the spindle hole
-        assert_eq!(px(&a, 31, 24), AMBER); // the label
+        assert_eq!(px(&a, 31, 24), PINK); // the label
         assert_eq!(px(&record(0, 1800, [200, 0, 0], 0.5), 31, 24), [200, 0, 0]);
         assert!(px(&a, 31, 4)[0] > 0); // the vinyl
-        assert_ne!(record(450, 1800, AMBER, 0.5), a);
-        assert_eq!(record(1800, 1800, AMBER, 0.5), a); // a whole turn
-        assert_eq!(record(769, 769, AMBER, 0.5), a); // at 78
+        assert_ne!(record(450, 1800, PINK, 0.5), a);
+        assert_eq!(record(1800, 1800, PINK, 0.5), a); // a whole turn
+        assert_eq!(record(769, 769, PINK, 0.5), a); // at 78
         // Louder, a brighter sheen.
         let lit = |img: &Rgb| img.iter().map(|&v| v as u32).sum::<u32>();
-        assert!(lit(&record(0, 1800, AMBER, 1.0)) > lit(&record(0, 1800, AMBER, 0.0)));
+        assert!(lit(&record(0, 1800, PINK, 1.0)) > lit(&record(0, 1800, PINK, 0.0)));
     }
 
     #[test]

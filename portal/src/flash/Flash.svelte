@@ -200,7 +200,7 @@
 
 <main>
   <header>
-    <img class="mark" src="./wordmark.svg" alt="Coverussi" />
+    <img class="mark" src="./logo.svg" alt="Coverussi" />
     <h1>Set up a display</h1>
     <p class="muted">Plug the board’s <strong>USB</strong> port (not POWER) into this computer.</p>
   </header>
@@ -343,7 +343,7 @@
 <style>
   main { max-width: 600px; margin: 0 auto; padding: 40px 24px 64px; display: flex; flex-direction: column; gap: 24px; }
   header { display: flex; flex-direction: column; gap: 6px; }
-  .mark { height: 24px; display: block; align-self: flex-start; margin-bottom: 18px; }
+  .mark { height: 30px; display: block; align-self: flex-start; margin-bottom: 18px; }
 
   .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
   .steps .card { padding: 0; gap: 0; }

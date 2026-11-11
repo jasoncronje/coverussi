@@ -162,7 +162,7 @@
 
 <header>
   <div class="bar">
-    <img class="mark" src="/wordmark.svg" alt="Coverussi" />
+    <img class="mark" src="/logo.svg" alt="Coverussi" />
     <button class="link" disabled={busy || !draft} onclick={skip}>Skip setup</button>
   </div>
 </header>
@@ -275,7 +275,7 @@
   header { position: sticky; top: 0; z-index: 2; background: var(--ground); border-bottom: 1px solid var(--border); }
   .bar, main { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
   .bar { height: 48px; display: flex; align-items: center; justify-content: space-between; }
-  .mark { height: 20px; display: block; }
+  .mark { height: 26px; display: block; }
   main { padding-top: 32px; padding-bottom: 64px; display: grid; grid-template-columns: 200px minmax(0, 720px); gap: 40px; align-items: start; }
   main.with-mirror { grid-template-columns: 200px minmax(0, 1fr) 320px; }
 

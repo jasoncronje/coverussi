@@ -88,7 +88,7 @@
 
 {#if session === 'unreachable'}
   <div class="unreachable card">
-    <img src="/wordmark.svg" alt="Coverussi" />
+    <img src="/logo.svg" alt="Coverussi" />
     <p>Can’t reach the display. Trying again…</p>
     <p class="muted small">It may be restarting after an update, or off Wi-Fi.</p>
   </div>
@@ -100,7 +100,7 @@
   <header>
     <div class="bar">
       <a class="brand" href="#/home">
-        <img class="mark" src="/wordmark.svg" alt="Coverussi" />
+        <img class="mark" src="/logo.svg" alt="Coverussi" />
       </a>
       <nav>
         {#each Object.entries(pages) as [key, label]}
@@ -128,9 +128,9 @@
   .bar { height: 48px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 28px; }
   .end { justify-self: end; display: flex; align-items: center; gap: 16px; }
   .update { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; background: var(--accent); color: #000000; font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; }
-  .update:hover { background: #ffc85c; }
+  .update:hover { background: #f27bb0; }
   .brand { justify-self: start; display: flex; align-items: center; gap: 10px; font-weight: 600; text-decoration: none; }
-  .mark { height: 20px; display: block; }
+  .mark { height: 26px; display: block; }
   nav { display: flex; gap: 22px; }
   nav a { text-decoration: none; color: #bbbbbb; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; }
   nav a:hover, nav a.active { color: #ffffff; }

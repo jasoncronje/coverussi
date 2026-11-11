@@ -1,100 +1,111 @@
 #!/usr/bin/env python3
-"""Draws the Coverussi logo files: the name in a 5 × 7 LED font and a lit C,
-both on a grid of dim LEDs like the panel's.
+"""Derives every Coverussi logo file from docs/logo/coverussi-light.svg.
 
     python3 scripts/logo.py
 
-Writes docs/logo/*.svg and the portal's favicon and header wordmark. The
-PNGs (docs/logo/social.png, portal/public/apple-touch-icon.png) are renders
-of social.svg and icon.svg; render them again after a change.
+Writes the dark logo, the mark, the social preview, and the portal's header
+logo, favicon and touch icon. The PNGs (docs/logo/social.png,
+portal/public/apple-touch-icon.png) are rendered with headless Chrome, and
+skipped if it isn't installed.
 """
 
+import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-AMBER = "#f2b33d"  # the portal's accent
-WHITE = "#f4efe6"
-DIM = "#262626"  # an unlit LED
-BLACK = "#000000"
-
-FONT = {
-    "C": [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."],
-    "O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
-    "V": ["#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."],
-    "E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
-    "R": ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
-    "U": ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
-    "S": [".###.", "#...#", "#....", ".###.", "....#", "#...#", ".###."],
-    "I": ["###", ".#.", ".#.", ".#.", ".#.", ".#.", "###"],
-}
+SOURCE = ROOT / "docs/logo/coverussi-light.svg"
+INK = "#16171B"  # the record and the wordmark, on light
+INK_ON_DARK = "#ECEEF1"
+MARK_BOX = (0, -875, 1480.5, 1050)  # the sleeve and the record: x, y, width, height
+CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
 
-def place(lit: dict, letter: str, col: int, row: int, colour: str) -> None:
-    for r, line in enumerate(FONT[letter]):
-        for c, ch in enumerate(line):
-            if ch == "#":
-                lit[(col + c, row + r)] = colour
+def dark(light: str) -> str:
+    assert light.count(INK) == 2
+    return light.replace(INK, INK_ON_DARK)
 
 
-def leds(cols: int, rows: int, lit: dict, pitch: float, on: float, off: float, inset: float = 0) -> str:
-    """Every LED in the grid: lit ones large and coloured, the rest small and dim."""
-    out = []
-    for r in range(rows):
-        for c in range(cols):
-            colour = lit.get((c, r))
-            x, y = inset + pitch * (c + 0.5), inset + pitch * (r + 0.5)
-            out.append(f'<circle cx="{x:g}" cy="{y:g}" r="{on if colour else off:g}" fill="{colour or DIM}"/>')
-    return "".join(out)
+def mark(light: str) -> str:
+    """The logo without the wordmark."""
+    svg, n = re.subn(r'<path transform=[^>]*/>', "", light)
+    assert n == 1
+    return re.sub(r'viewBox="[^"]*"', 'viewBox="%g %g %g %g"' % MARK_BOX, svg, count=1)
 
 
-def svg(width: float, height: float, body: str, title: str, tile: float | None) -> str:
-    ground = f'<rect width="{width:g}" height="{height:g}" rx="{tile:g}" fill="{BLACK}"/>' if tile is not None else ""
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width:g} {height:g}" role="img" aria-label="{title}">'
-            f"<title>{title}</title>{ground}{body}</svg>\n")
+def inner(svg: str) -> str:
+    """What's inside the root element, without the title."""
+    body = svg[svg.index(">") + 1 : svg.rindex("</svg>")]
+    return re.sub(r"<title>.*?</title>", "", body)
 
 
-def wordmark(tile: bool) -> str:
-    """COVER in amber, USSI in white: the ussi half stays white across the family."""
-    lit: dict = {}
-    col = 1
-    for i, letter in enumerate("COVERUSSI"):
-        place(lit, letter, col, 1, AMBER if i < 5 else WHITE)
-        col += len(FONT[letter][0]) + 1
-    return svg(col * 10, 90, leds(col, 9, lit, 10, 4.2, 2.2), "Coverussi", 8 if tile else None)
+def square(pad: float) -> tuple[float, float, float]:
+    """The mark centred in a square with `pad` of its width on each side: x, y, side."""
+    x, y, w, h = MARK_BOX
+    side = w * (1 + 2 * pad)
+    return x - (side - w) / 2, y - (side - h) / 2, side
 
 
-def icon() -> str:
-    """A lit C on a 9 × 9 patch of the panel."""
-    lit: dict = {}
-    place(lit, "C", 2, 1, AMBER)
-    return svg(256, 256, leds(9, 9, lit, 28, 11.5, 6, inset=2), "Coverussi", 36)
+def favicon(light: str) -> str:
+    """The mark in a square; the record turns light when the browser is dark."""
+    x, y, side = square(0.03)
+    body = inner(mark(light)).replace(f'fill="{INK}"', 'class="ink"', 1)
+    style = f"<style>.ink{{fill:{INK}}}@media (prefers-color-scheme:dark){{.ink{{fill:{INK_ON_DARK}}}}}</style>"
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{x:g} {y:g} {side:g} {side:g}">{style}{body}</svg>'
 
 
-def social() -> str:
-    """GitHub's 1280 × 640 preview: the name lit across a 64 × 32 grid, as wide as the panel."""
-    lit: dict = {}
-    width = sum(len(FONT[ch][0]) + 1 for ch in "COVERUSSI") - 1
-    col = (64 - width) // 2
-    for i, letter in enumerate("COVERUSSI"):
-        place(lit, letter, col, 12, AMBER if i < 5 else WHITE)
-        col += len(FONT[letter][0]) + 1
-    return svg(1280, 640, leds(64, 32, lit, 20, 8.4, 4.4), "Coverussi", 0)
+def touch_icon(light: str, px: int) -> str:
+    """The mark on a light tile: phones fill a transparent icon with black."""
+    x, y, side = square(0.2)
+    tile = f'<rect x="{x:g}" y="{y:g}" width="{side:g}" height="{side:g}" fill="{INK_ON_DARK}"/>'
+    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{px}" height="{px}" viewBox="{x:g} {y:g} {side:g} {side:g}">{tile}{inner(mark(light))}</svg>'
+
+
+def social(light: str) -> str:
+    """GitHub's social preview, 1280 × 640: the light logo on a light ground."""
+    box = re.search(r'viewBox="([^"]*)"', light).group(1)
+    w = 880
+    h = w * 1176 / 5812.5
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">'
+        f'<rect width="1280" height="640" fill="{INK_ON_DARK}"/>'
+        f'<svg x="{(1280 - w) / 2:g}" y="{(640 - h) / 2:g}" width="{w}" height="{h:g}" viewBox="{box}">{inner(light)}</svg></svg>'
+    )
+
+
+def render(svg: str, out: Path, width: int, height: int) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        page = Path(tmp) / "page.svg"
+        page.write_text(svg)
+        subprocess.run(
+            [str(CHROME), "--headless=new", f"--screenshot={out}", f"--window-size={width},{height}",
+             "--force-device-scale-factor=1", "--hide-scrollbars", page.as_uri()],
+            check=True, capture_output=True,
+        )
 
 
 def main() -> None:
+    light = SOURCE.read_text()
     files = {
-        "docs/logo/wordmark.svg": wordmark(tile=True),
-        "docs/logo/wordmark-bare.svg": wordmark(tile=False),
-        "docs/logo/icon.svg": icon(),
-        "docs/logo/social.svg": social(),
-        "portal/public/favicon.svg": icon(),
-        "portal/public/wordmark.svg": wordmark(tile=False),
+        "docs/logo/coverussi-dark.svg": dark(light),
+        "docs/logo/coverussi-mark.svg": mark(light),
+        "docs/logo/social.svg": social(light),
+        "portal/public/logo.svg": dark(light),  # the portal is black
+        "portal/public/favicon.svg": favicon(light),
     }
-    for name, text in files.items():
-        path = ROOT / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
-        print(f"wrote {name}")
+    for path, svg in files.items():
+        (ROOT / path).write_text(svg)
+        print(f"{path}  {len(svg) // 1024} KB")
+    if not CHROME.exists():
+        print("No Chrome: social.png and apple-touch-icon.png not rendered")
+        return
+    for path, svg, w, h in [
+        ("docs/logo/social.png", social(light), 1280, 640),
+        ("portal/public/apple-touch-icon.png", touch_icon(light, 180), 180, 180),
+    ]:
+        render(svg, ROOT / path, w, h)
+        print(path)
 
 
 if __name__ == "__main__":
