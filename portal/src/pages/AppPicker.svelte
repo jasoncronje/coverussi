@@ -6,7 +6,6 @@
   import { api } from '../lib/api';
   import { appShow, clearApp, isAnalog, otherShow, picks, setAnalog, setAppShow, setOtherShow, type RowShow } from '../lib/apps';
   import Icon from '../lib/Icon.svelte';
-  import Segmented from '../lib/Segmented.svelte';
   import type { AnalogSource, AppShow, AppsResult, DigitalSource } from '../lib/types';
 
   // One change carries both lists: picking analog, or leaving it, touches the analog sources too.
@@ -64,69 +63,44 @@
 </script>
 
 <div class="picker">
-  <div class="app all">
-    <span class="label">When it plays<span class="sub">{picked.length ? 'Anything not listed below' : 'Every app and input'}</span></span>
-    <Segmented label="What it shows" value={otherShow(source)} options={SHOWS} onchange={(v) => onchange(setOtherShow(source, v), analog)} />
+  <div class="app">
+    <span class="label">{picked.length ? 'Everything else' : 'Everything it plays'}</span>
+    <select aria-label="What it shows" value={otherShow(source)} onchange={(e) => onchange(setOtherShow(source, e.currentTarget.value as AppShow), analog)}>
+      {#each SHOWS as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+    </select>
+    <span class="clear"></span>
   </div>
-  {#if picked.length}
-    <div class="divider">Except</div>
-    <ul class="apps">
-      {#each picked as app (app)}
-        <li class="app">
-          <span class="label">{app}</span>
-          {#if same(app, current)}<span class="pill">Open now</span>
-          {:else if result && !result.apps.some((a) => same(a, app))}<span class="faint small" title="This player doesn’t list it now">Not listed</span>{/if}
-          <Segmented label={`What ${app} shows`} value={rowShow(app)} options={ROW_SHOWS} onchange={(v) => setRow(app, v)} />
-          <button class="clear" onclick={() => onchange(clearApp(source, app), setAnalog(analog, entity, app, false))}
-            aria-label={`Remove ${app}`} title="Remove: it follows everything else again"><Icon name="x" size={14} /></button>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-  <div class="tools">
-    {#if addable.length}
-      <select aria-label="Add an app or input" value="" onchange={(e) => { add(e.currentTarget.value); e.currentTarget.value = ''; }}>
-        <option value="">Add an app or input…</option>
-        {#each addable as a (a)}<option value={a}>{a}{same(a, current) ? ' (open now)' : ''}</option>{/each}
+  {#each picked as app (app)}
+    <div class="app">
+      <span class="label">{app}{#if same(app, current)}<span class="pill">Open now</span>{/if}</span>
+      <select aria-label={`What ${app} shows`} value={rowShow(app)} onchange={(e) => setRow(app, e.currentTarget.value as RowShow)}>
+        {#each ROW_SHOWS as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
       </select>
-    {:else if result && !result.apps.length && !asking}
-      <span class="meta">Home Assistant lists no apps or inputs for this player.</span>
-    {/if}
-    {#if asking}<span class="meta">Asking Home Assistant…</span>{/if}
-    <span class="spacer"></span>
-    <button class="icon-button" disabled={asking} onclick={refresh} aria-label="Refresh the app list" title="Refresh the app list">
-      <span class:spin={asking}><Icon name="refresh" size={15} /></span>
-    </button>
-  </div>
+      <button class="clear" onclick={() => onchange(clearApp(source, app), setAnalog(analog, entity, app, false))}
+        aria-label={`Remove ${app}`} title="Remove"><Icon name="x" size={14} /></button>
+    </div>
+  {/each}
+  {#if addable.length}
+    <select class="add" aria-label="Add an app or input" value="" onchange={(e) => { add(e.currentTarget.value); e.currentTarget.value = ''; }}>
+      <option value="">+ Add an app or input</option>
+      {#each addable as a (a)}<option value={a}>{a}{same(a, current) ? ' (open now)' : ''}</option>{/each}
+    </select>
+  {:else if asking}
+    <span class="meta">Asking Home Assistant…</span>
+  {/if}
   {#if error}<p class="error small">{error}</p>{/if}
 </div>
 
 <style>
-  .picker { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 6px; }
-  .tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .tools select { height: 32px; font-size: 13px; max-width: 100%; }
-  .spacer { flex: 1; }
-  .meta { color: var(--muted); font-size: 13px; margin: 0; }
-  .icon-button { width: 32px; height: 32px; padding: 0; justify-content: center; color: var(--muted); }
-  .icon-button:hover:not(:disabled) { color: var(--text); }
-  .spin { display: inline-flex; animation: spin 0.9s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
-  .apps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-  .app { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 4px 0 10px; border-radius: 8px; }
-  .apps .app:hover { background: var(--raised); }
-  .all { padding-left: 0; }
-  .all .label { display: flex; flex-direction: column; font-weight: 500; }
-  .sub { color: var(--muted); font-size: 13px; font-weight: 400; }
-  .divider { display: flex; align-items: center; gap: 10px; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
-  .divider::after { content: ''; flex: 1; border-top: 1px solid var(--rule); }
-  .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .picker { display: flex; flex-direction: column; gap: 6px; padding: 0 0 6px; max-width: 460px; }
+  .app { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+  .label { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app select { flex: none; width: 124px; height: 32px; font-size: 13px; }
   .app .pill { height: 18px; padding: 0 7px; font-size: 11px; }
   .clear { flex: none; width: 28px; height: 28px; padding: 0; justify-content: center; background: none; color: var(--faint); }
-  .clear:hover:not(:disabled) { color: var(--text); }
+  button.clear:hover:not(:disabled) { color: var(--text); }
+  .add { align-self: flex-start; height: 32px; margin-top: 2px; font-size: 13px; color: var(--muted); background-color: transparent; border-color: transparent; padding-left: 0; }
+  .add:hover { color: var(--text); }
+  .meta { color: var(--muted); font-size: 13px; }
   .small { font-size: var(--fs-small); }
-  @media (max-width: 620px) {
-    .app { flex-wrap: wrap; padding: 6px 0; }
-    .app .label { flex-basis: 100%; }
-  }
 </style>

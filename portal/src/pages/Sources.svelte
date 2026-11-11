@@ -232,7 +232,7 @@
           <button class="toggle" aria-expanded={isOpen} onclick={() => toggle(d.entity)}>
             <span class="chevron"><Icon name="chevron-down" size={16} /></span>
             <span class="what"><span class="name">{name}</span>
-              <span class="sub" class:limited={d.enabled && limited(d, sources.analog)}>{d.enabled ? showSummary(d, sources.analog) : d.entity}</span></span>
+              <span class="sub" class:limited={!isOpen && d.enabled && limited(d, sources.analog)}>{d.enabled && !isOpen ? showSummary(d, sources.analog) : d.entity}</span></span>
             {#if s}<span class={s.pill || 'state'}>{s.text}</span>{/if}
           </button>
           <input type="checkbox" class="switch" checked={d.enabled} aria-label={`Follow ${name}`} title={d.enabled ? 'On' : 'Off'}
@@ -242,7 +242,6 @@
         </div>
         {#if isOpen}
           <div class="body">
-            <p class="entity">{d.entity}</p>
             <AppPicker source={d} analog={sources.analog}
               onchange={(next, analog) => onchange({ ...sources, digital: sources.digital.map((x, j) => (j === r.i ? next : x)), analog })} />
           </div>
@@ -368,7 +367,6 @@
   .remove-space { flex: none; width: 32px; }
   .room .summary { cursor: pointer; }
   .body { padding: 0 0 16px 60px; }
-  .entity { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
   .fields { display: flex; flex-direction: column; gap: 10px; }
   .line { display: grid; grid-template-columns: 124px minmax(0, 1fr); align-items: center; gap: 12px; color: var(--muted); }
   .control { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
