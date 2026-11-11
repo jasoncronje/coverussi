@@ -273,12 +273,33 @@ fn on() -> bool {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Sources {
-    /// The first one playing wins; the list order is the priority.
     pub digital: Vec<DigitalSource>,
-    /// The first one playing wins, over any digital source.
     pub analog: Vec<AnalogSource>,
+    /// The sources' entities, the highest first: the first one playing wins, digital or analog.
+    /// Empty (older settings): see `priority`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
     /// With nothing above playing, listen to the room and identify any music heard.
     pub listen_for_music: bool,
+}
+
+impl Sources {
+    /// Every source's entity once, the highest first: `order`, then any it doesn't name.
+    /// Those go as older settings had them, where analog was heard before any player:
+    /// the analog sources, then the digital ones.
+    pub fn priority(&self) -> Vec<&str> {
+        let digital = || self.digital.iter().map(|d| d.entity.as_str());
+        let analog = || self.analog.iter().map(|a| a.entity.as_str());
+        let known = |e: &str| digital().chain(analog()).any(|x| x == e);
+        let mut out: Vec<&str> = Vec::new();
+        let ordered = self.order.iter().map(String::as_str).filter(|e| known(e));
+        for e in ordered.chain(analog()).chain(digital()) {
+            if !e.is_empty() && !out.contains(&e) {
+                out.push(e);
+            }
+        }
+        out
+    }
 }
 
 /// How the microphones hear an analog source. Levels in dBFS.

@@ -147,7 +147,8 @@ export interface Settings {
     progress_ring: string; // #rrggbb, for apps with no colour of their own
     progress_colors: { app: string; color: string }[];
   };
-  sources: { digital: DigitalSource[]; analog: AnalogSource[]; listen_for_music: boolean };
+  /** order: the sources' entities, the highest first; missing in older settings (see priority). */
+  sources: { digital: DigitalSource[]; analog: AnalogSource[]; order?: string[]; listen_for_music: boolean };
   listening: {
     music_threshold_db: number;
     gap_threshold_db: number;

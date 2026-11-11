@@ -1,6 +1,6 @@
 // What each app on a digital source shows, read and changed the way the device
 // reads it (Settings::app_show): progress, off, then the cover list, else `other`.
-import type { AnalogSource, AppShow, DigitalSource } from './types';
+import type { AnalogSource, AppShow, DigitalSource, Settings } from './types';
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const has = (list: string[] | undefined, app: string) => !!list?.some((a) => same(a, app));
@@ -106,4 +106,13 @@ export function showSummary(d: DigitalSource, analog: AnalogSource[] = []): stri
 export function limited(d: DigitalSource, analog: AnalogSource[] = []): boolean {
   const l = lists(d);
   return l.other !== 'cover' || l.progress.length > 0 || l.off.length > 0 || analogInputs(analog, d.entity).length > 0;
+}
+
+/** Every source's entity once, the highest first, as the device reads it (Sources::priority):
+ *  the saved order, then any it doesn't name, analog before digital as older settings had them. */
+export function priority(s: Settings['sources']): string[] {
+  const all = [...s.analog.map((a) => a.entity), ...s.digital.map((d) => d.entity)];
+  const out: string[] = [];
+  for (const e of [...(s.order ?? []).filter((e) => all.includes(e)), ...all]) if (e && !out.includes(e)) out.push(e);
+  return out;
 }

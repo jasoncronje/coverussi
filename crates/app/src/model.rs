@@ -115,6 +115,10 @@ impl Settings {
     }
 }
 
+fn mode_for(show: AppShow) -> Mode {
+    if show == AppShow::Progress { Mode::Progress } else { Mode::Digital }
+}
+
 /// "HH:MM" as minutes after midnight.
 fn minutes(clock: &str, fallback: u32) -> u32 {
     let parse = || {
@@ -608,25 +612,21 @@ impl Device {
     }
 
     /// (mode, the player shown, the analog source)
+    ///
+    /// The highest source on the list that's playing: nothing else decides it. One that
+    /// only just paused or stopped keeps the screen while no other plays.
     fn choose(&self, now: Ms) -> (Mode, Option<&Player>, Option<usize>) {
-        for (i, a) in self.settings.sources.analog.iter().enumerate() {
-            if let Some(p) = self.players.get(&a.entity).filter(|p| a.on(p)) {
+        let sources = &self.settings.sources;
+        let mut held: Option<(&Player, AppShow)> = None;
+        for entity in sources.priority() {
+            let Some(p) = self.players.get(entity) else { continue };
+            // An analog source plays while its state says so, whatever the player says it plays.
+            if let Some(i) = sources.analog.iter().position(|a| a.entity == entity && a.on(p)) {
                 return (Mode::Analog, Some(p), Some(i));
             }
-        }
-        // An app on the progress screen counts as playing and naming what it plays even paused or between videos, so the TV's
-        // sound on the WiiM ("Unknown" on HDMI) doesn't take the screen while the next one loads.
-        let rank = |q: &Player, show: AppShow| {
-            let progress = show == AppShow::Progress;
-            (if q.playing() || progress { 4 } else { 0 })
-                + (if q.has_song() || progress { 2 } else { 0 })
-                + (if q.picture.is_empty() { 0 } else { 1 })
-        };
-        let mut best: Option<(&Player, AppShow)> = None;
-        let mut any_playing = false; // in any app, even one that shows nothing (a TV on Netflix)
-        for d in self.settings.sources.digital.iter().filter(|d| d.enabled) {
-            let Some(p) = self.players.get(&d.entity) else { continue };
-            any_playing |= p.playing();
+            if !sources.digital.iter().any(|d| d.enabled && d.entity == entity) {
+                continue;
+            }
             let show = self.settings.app_show(p);
             if show == AppShow::Off {
                 continue;
@@ -634,22 +634,24 @@ impl Device {
             let paused_recently =
                 p.state == "paused" && now - p.changed < self.settings.display.pause_grace_s as Ms * 1000;
             let just_stopped = p.usable() && !p.playing() && p.state != "paused" && now - p.changed < STOP_HOLD_MS;
-            if !p.playing() && !paused_recently && !just_stopped {
-                continue;
+            let holds = paused_recently || just_stopped;
+            // An app on the progress screen counts as playing even paused or between videos,
+            // so a source below it doesn't take the screen while the next one loads.
+            if p.playing() || (holds && show == AppShow::Progress) {
+                return (mode_for(show), Some(p), None);
             }
-            // Playing beats paused, then naming a song beats "Unknown", then having a
-            // picture beats none (the WiiM on its TV input plays with no song while the
-            // Apple TV has one); among equals, the one higher on the list.
-            let better = best.is_none_or(|(b, s)| rank(p, show) > rank(b, s));
-            if better {
-                best = Some((p, show));
+            if holds && held.is_none() {
+                held = Some((p, show));
             }
         }
-        if let Some((p, show)) = best {
-            return (if show == AppShow::Progress { Mode::Progress } else { Mode::Digital }, Some(p), None);
+        if let Some((p, show)) = held {
+            return (mode_for(show), Some(p), None);
         }
-        // Nothing playing that Home Assistant knows of: listen to the room.
-        let mode = if self.settings.sources.listen_for_music && !any_playing { Mode::Analog } else { Mode::Off };
+        // Nothing playing that Home Assistant knows of: listen to the room. A player playing
+        // in any app, even one that shows nothing (a TV on Netflix), isn't that.
+        let any_playing =
+            sources.digital.iter().filter(|d| d.enabled).any(|d| self.players.get(&d.entity).is_some_and(Player::playing));
+        let mode = if sources.listen_for_music && !any_playing { Mode::Analog } else { Mode::Off };
         (mode, None, None)
     }
 
@@ -957,11 +959,11 @@ pub(crate) mod tests {
 
     #[test]
     fn the_progress_screen_stays_between_videos() {
-        // The WiiM plays the TV's sound on HDMI, "Unknown" with a picture, above the Apple TV on the list.
+        // The WiiM plays the TV's sound on HDMI, "Unknown" with a picture, below the Apple TV on the list.
         let mut s = Settings::default();
         s.sources.digital = vec![
-            DigitalSource { exclude: true, ..digital("media_player.wiim", &["Phono"]) },
             DigitalSource { progress: vec!["YouTube".into()], ..digital("media_player.apple_tv", &[]) },
+            DigitalSource { exclude: true, ..digital("media_player.wiim", &["Phono"]) },
         ];
         let mut d = Device::default();
         d.set_settings(s);
@@ -1181,19 +1183,46 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_player_with_no_song_loses_to_one_with_a_song() {
+    fn an_input_turned_off_gives_way() {
+        // The TV's sound on the WiiM plays "Unknown" while the Apple TV names the song.
         let mut d = house();
         let tv = Player { title: "I'm On One".into(), ..player("media_player.apple_tv", "playing", "", "/tv.jpg") };
         d.player(tv, 0);
         let wiim = Player { title: "Unknown".into(), ..player("media_player.wiim_ultra_2", "playing", "HDMI", "/wiim.jpg") };
         d.player(wiim, 5000);
         d.update(5000);
+        assert_eq!((d.mode(), d.art()), (Mode::Digital, "/wiim.jpg")); // higher on the list: only the order decides
+        let mut s = house_settings();
+        s.sources.digital[0].off = vec!["HDMI".into()];
+        d.set_settings(s);
+        d.update(6000);
         assert_eq!((d.mode(), d.art()), (Mode::Digital, "/tv.jpg"));
     }
 
     #[test]
+    fn the_order_puts_a_player_above_an_analog_source() {
+        let mut s = house_settings();
+        let mut d = Device::default();
+        d.set_settings(s.clone());
+        d.player(player("media_player.apple_tv", "playing", "", "/tv.jpg"), 0);
+        d.player(player("media_player.wiim_ultra_2", "idle", "Phono In", ""), 0);
+        d.update(0);
+        assert_eq!(d.mode(), Mode::Analog); // older settings, no order: analog is heard first
+        s.sources.order = vec!["media_player.apple_tv".into(), "media_player.wiim_ultra_2".into()];
+        d.set_settings(s.clone());
+        d.update(1000);
+        assert_eq!((d.mode(), d.art()), (Mode::Digital, "/tv.jpg"));
+        // A source the order doesn't name comes after those it does; one that's gone is skipped.
+        s.sources.order = vec!["media_player.gone".into(), "media_player.apple_tv".into()];
+        assert_eq!(s.sources.priority(), ["media_player.apple_tv", "media_player.wiim_ultra_2"]);
+    }
+
+    #[test]
     fn wiim_switching_to_tv_keeps_the_apple_tv_art() {
-        let mut d = house();
+        let mut s = house_settings();
+        s.sources.digital[0].off = vec!["TV".into()];
+        let mut d = Device::default();
+        d.set_settings(s);
         d.player(player("media_player.apple_tv", "playing", "", "/tv.jpg"), 0);
         d.player(player("media_player.wiim_ultra_2", "idle", "Phono In", ""), 0);
         d.update(0);

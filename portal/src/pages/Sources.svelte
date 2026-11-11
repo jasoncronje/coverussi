@@ -3,10 +3,11 @@
   // progress screen shows, and an input it can't name the music of is analog,
   // which the display listens to. Anything else (a plug, a switch) is analog
   // while a Home Assistant state matches. Each is a row that opens to edit it,
-  // with a switch to turn it off and a grip to drag it. Last comes the room.
+  // with a switch to turn it off and a grip to drag it: the highest one playing
+  // is shown. Last comes the room.
   import { untrack } from 'svelte';
   import { api } from '../lib/api';
-  import { limited, onPlayer, showSummary } from '../lib/apps';
+  import { limited, onPlayer, priority, showSummary } from '../lib/apps';
   import EntityInput from '../lib/EntityInput.svelte';
   import Icon from '../lib/Icon.svelte';
   import { live } from '../lib/live.svelte';
@@ -20,14 +21,14 @@
 
   const ENTITY = /^[a-z0-9_]+\.[a-z0-9_]+$/;
 
-  // The rows: what isn't a player first (analog is heard before any player), then
-  // the players. An analog source that is a listed player's input is set on that player.
+  // The rows, the highest first. An analog source that is a listed player's input is
+  // set on that player; any other on a player's entity sits right above it, heard first.
   type Row = { kind: 'other'; i: number; a: AnalogSource } | { kind: 'player'; i: number; d: DigitalSource };
-  const rows = $derived<Row[]>([
-    ...sources.analog.map((a, i) => ({ kind: 'other' as const, i, a })).filter((r) => !onPlayer(r.a, sources.digital)),
-    ...sources.digital.map((d, i) => ({ kind: 'player' as const, i, d })),
-  ]);
-  const movable = (r: Row) => rows.filter((x) => x.kind === r.kind).length > 1;
+  const rows = $derived<Row[]>(priority(sources).flatMap((entity) => [
+    ...sources.analog.map((a, i) => ({ kind: 'other' as const, i, a })).filter((r) => r.a.entity === entity && !onPlayer(r.a, sources.digital)),
+    ...sources.digital.map((d, i) => ({ kind: 'player' as const, i, d })).filter((r) => r.d.entity === entity),
+  ]));
+  const entityOf = (r: Row) => (r.kind === 'player' ? r.d.entity : r.a.entity);
 
   // Friendly names from Home Assistant, when the device can ask it.
   let names = $state<Record<string, string>>({});
@@ -87,21 +88,15 @@
   const toggle = (key: string) => (open[key] = !open[key]);
 
   // Reordering: drag a row by its grip, or focus the grip and use the arrow keys.
-  // A row moves among its own kind.
   let list = $state<HTMLUListElement>();
   let dragging = $state<number | null>(null);
   function move(from: number, to: number): boolean {
     const a = rows[from], b = rows[to];
-    if (!a || !b || a.kind !== b.kind || from === to) return false;
-    const reorder = <T,>(l: T[]) => { const c = [...l]; c.splice(b.i, 0, ...c.splice(a.i, 1)); return c; };
-    if (a.kind === 'player') digital(reorder(sources.digital));
-    else {
-      // These rows are open by index: the open ones move with their source.
-      const wasOpen = reorder(sources.analog.map((_, i) => !!open[`a${i}`]));
-      const players = Object.entries(open).filter(([k]) => k.includes('.'));
-      open = Object.fromEntries([...players, ...wasOpen.map((o, i) => [`a${i}`, o] as [string, boolean])]);
-      analog(reorder(sources.analog));
-    }
+    if (!a || !b || entityOf(a) === entityOf(b)) return false;
+    const order = priority(sources);
+    const at = order.indexOf(entityOf(b));
+    order.splice(at, 0, ...order.splice(order.indexOf(entityOf(a)), 1));
+    onchange({ ...sources, order });
     return true;
   }
   function grab(e: PointerEvent, i: number) {
@@ -117,8 +112,6 @@
     let to = dragging;
     while (to > 0 && e.clientY < mid(els[to - 1])) to--;
     while (to < els.length - 1 && e.clientY > mid(els[to + 1])) to++;
-    // Past its own kind: as far as that kind goes.
-    while (to !== dragging && rows[to].kind !== rows[dragging].kind) to += to < dragging ? 1 : -1;
     if (move(dragging, to)) dragging = to;
   }
   const mid = (r: HTMLElement) => { const b = r.getBoundingClientRect(); return b.top + b.height / 2; };
@@ -201,7 +194,7 @@
 {/if}
 
 <div class="head">
-  <span class="count">{rows.length ? `${rows.length} source${rows.length === 1 ? '' : 's'}` : 'No sources yet'}</span>
+  <span class="count">{rows.length > 1 ? 'The highest one that’s playing is shown. Drag to reorder.' : rows.length ? '1 source' : 'No sources yet'}</span>
   <span class="spacer"></span>
   {#if ha && adding === null}<button onclick={() => (adding = '')}><Icon name="plus" size={15} />Add source</button>{/if}
 </div>
@@ -224,11 +217,12 @@
       {@const s = status(d)}
       <li class="source" class:open={isOpen} class:off={!d.enabled} class:dragging={dragging === n}>
         <div class="summary">
-          {#if movable(r)}
+          {#if rows.length > 1}
             <button class="grip" aria-label={`Move ${name}, with the arrow keys`} title="Drag to reorder"
               onpointerdown={(e) => grab(e, n)} onpointermove={drag} onpointerup={() => (dragging = null)} onpointercancel={() => (dragging = null)}
               onkeydown={(e) => nudge(e, n)}><Icon name="grip" size={16} /></button>
           {:else}<span class="grip"></span>{/if}
+          <span class="n">{n + 1}</span>
           <button class="toggle" aria-expanded={isOpen} onclick={() => toggle(d.entity)}>
             <span class="chevron"><Icon name="chevron-down" size={16} /></span>
             <span class="what"><span class="name">{name}</span>
@@ -255,11 +249,12 @@
       {@const error = analogError(a)}
       <li class="source" class:open={isOpen} class:off={!a.enabled} class:dragging={dragging === n}>
         <div class="summary">
-          {#if movable(r)}
+          {#if rows.length > 1}
             <button class="grip" aria-label={`Move ${otherName(a)}, with the arrow keys`} title="Drag to reorder"
               onpointerdown={(e) => grab(e, n)} onpointermove={drag} onpointerup={() => (dragging = null)} onpointercancel={() => (dragging = null)}
               onkeydown={(e) => nudge(e, n)}><Icon name="grip" size={16} /></button>
           {:else}<span class="grip"></span>{/if}
+          <span class="n">{n + 1}</span>
           <button class="toggle" aria-expanded={isOpen} onclick={() => toggle(key)}>
             <span class="chevron"><Icon name="chevron-down" size={16} /></span>
             <span class="what">
@@ -311,6 +306,7 @@
   <li class="source room" class:off={!sources.listen_for_music}>
     <label class="summary">
       <span class="grip"></span>
+      <span class="n"></span>
       <span class="toggle">
         <span class="chevron"></span>
         <span class="what">
@@ -356,6 +352,7 @@
   .state { flex: none; color: var(--muted); font-weight: 400; font-size: 13px; }
   .grip { flex: none; width: 24px; height: 32px; padding: 0; justify-content: center; background: none; border: none; color: var(--faint); cursor: grab; touch-action: none; }
   span.grip { cursor: default; }
+  .n { flex: none; width: 14px; color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
   button.grip:hover:not(:disabled) { background: none; color: var(--text); }
   .dragging { background: var(--raised); }
   .dragging .grip { cursor: grabbing; color: var(--text); }
@@ -366,7 +363,7 @@
   .remove:hover:not(:disabled) { background: var(--pill-negative-bg); border-color: var(--pill-negative-bg); color: var(--pill-negative-ink); }
   .remove-space { flex: none; width: 32px; }
   .room .summary { cursor: pointer; }
-  .body { padding: 0 0 16px 60px; }
+  .body { padding: 0 0 16px 82px; }
   .fields { display: flex; flex-direction: column; gap: 10px; }
   .line { display: grid; grid-template-columns: 124px minmax(0, 1fr); align-items: center; gap: 12px; color: var(--muted); }
   .control { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
