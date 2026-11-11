@@ -274,7 +274,11 @@ pub enum Boot {
     Ready,
 }
 
-const BAR: (i32, i32, i32) = (14, 50, 31); // left, right, top
+// The wordmark and the bar are one group, centred on the panel: 7 rows of letters,
+// 6 dark, 2 of bar. The label is centred in what's left under the bar.
+const WORDMARK_TOP: i32 = 24;
+const BAR: (i32, i32, i32) = (14, 50, 37); // left, right, top
+const LABEL_TOP: i32 = 49;
 const SWEEP_MS: u64 = 1400;
 
 /// The start-up screen `t` ms in: the wordmark, a bar sweeping until it's ready, and what it waits for.
@@ -286,7 +290,7 @@ pub fn boot(stage: Boot, t: u64) -> Box<Rgb> {
         Boot::HomeAssistant => "HOME ASSISTANT",
         Boot::Ready => "READY",
     };
-    p.centered(label, Font::Small, 1, 39, GRAY);
+    p.centered(label, Font::Small, 1, LABEL_TOP, GRAY);
     p.0
 }
 
@@ -319,16 +323,16 @@ pub fn update(stage: Update, t: u64) -> Box<Rgb> {
         Update::Restarting => "RESTARTING".into(),
         Update::Failed => "UPDATE FAILED".into(),
     };
-    p.centered(&label, Font::Small, 1, 39, if stage == Update::Failed { RED } else { GRAY });
+    p.centered(&label, Font::Small, 1, LABEL_TOP, if stage == Update::Failed { RED } else { GRAY });
     p.0
 }
 
-/// "COVER" pink and "USSI" white, across the top half.
+/// "COVER" pink and "USSI" white.
 fn wordmark() -> Canvas {
     let mut p = Canvas(Box::new([0; SIZE * SIZE * 3]));
     let x = (SIZE as i32 - Font::Big.width("COVERUSSI", 1)) / 2;
-    p.text("COVER", Font::Big, 1, x, 18, PINK);
-    p.text("USSI", Font::Big, 1, x + Font::Big.width("COVER", 1) + 1, 18, WHITE);
+    p.text("COVER", Font::Big, 1, x, WORDMARK_TOP, PINK);
+    p.text("USSI", Font::Big, 1, x + Font::Big.width("COVER", 1) + 1, WORDMARK_TOP, WHITE);
     p
 }
 
@@ -758,6 +762,23 @@ mod tests {
         let lit = |c: [u8; 3]| (0..SIZE).flat_map(|y| (0..SIZE).map(move |x| (x, y))).filter(|&(x, y)| px(&start, x, y) == c).count();
         assert!(lit(PINK) > 40 && lit(WHITE) > 30);
         assert_ne!(boot(Boot::WiFi, 0), boot(Boot::HomeAssistant, 0)); // says what it waits for
+    }
+
+    #[test]
+    fn boot_is_two_centred_groups() {
+        let p = boot(Boot::Ready, 0);
+        // The rows and columns holding any of these colours: first and last.
+        let span = |colors: &[[u8; 3]], rows: bool| {
+            let hit: Vec<usize> = (0..SIZE).filter(|&a| (0..SIZE).any(|b| colors.contains(&if rows { px(&p, b, a) } else { px(&p, a, b) }))).collect();
+            (hit[0], SIZE - 1 - hit[hit.len() - 1])
+        };
+        // The wordmark and the bar: as much dark above as below (a row out, 15 in 64), and left as right.
+        assert_eq!(span(&[PINK, WHITE], true), (24, 25));
+        let (left, right) = span(&[PINK, WHITE], false);
+        assert!(left.abs_diff(right) <= 1, "{left} {right}");
+        // The label: as far under the bar as above the panel's edge.
+        let (top, below) = span(&[GRAY], true);
+        assert_eq!(top - (BAR.2 as usize + 2), below);
     }
 
     #[test]
