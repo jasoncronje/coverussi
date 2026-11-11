@@ -42,7 +42,9 @@ Open the web app. The first time, it walks you through setup: the time zone, whi
 
 Sources can be changed later in Settings, Sources:
 
-- **Digital sources:** pick media players. You can include only some apps or inputs, such as only AirPlay on a receiver, or exclude some, such as HDMI.
-- **Analog sources:** name each one and say which entity means it's playing, such as a receiver's input set to Phono.
+- **Add source:** pick any Home Assistant entity. The highest one on the list that's playing is shown; drag to reorder.
+- **A media player:** choose what it shows (Cover, Progress or Off), then any app or input that differs, such as HDMI set to Off. Set an input to Analog, such as Phono, and the display listens while the player is on it.
+- **Anything else:** a switch or helper is analog while its state matches, such as a plug that's on.
+- **The room:** with nothing above playing, listen for any music.
 
 Then run **Calibrate**. It listens to the room while it's quiet, then with music playing, and sets the levels the display uses to tell the two apart.

@@ -12,7 +12,8 @@ A 64 × 64 LED matrix that shows the artwork of whatever is playing. **Digital s
 | Recognition | Shazam's tag endpoint, with the signature code from **shazamio-core** (MIT, Rust), called from the board | Free and accurate. It's reverse-engineered and can break, so it sits behind one function (`identify(pcm) → answer`). |
 | Web app | Svelte 5 + Vite + TypeScript, built to 54 KB gzipped and embedded in the firmware | Small enough to serve from flash. |
 | Storage | NVS: setup, settings, the last 10 songs, album corrections, the web app's password | No history; the recent songs are a buffer. |
-| Digital sources | Any number of media players; the one that started playing last wins | What you started last is what you're looking at. |
+| Sources | One ordered list; the highest one playing is shown, digital or analog | One rule you can see and drag. |
+| Digital sources | Any number of media players; per app or input: the cover, the progress screen, nothing, or analog | A streamer's phono input is analog, its network input isn't. |
 | Analog sources | A named list, each played while an HA entity's attribute or state has a value (such as a receiver's source `Phono`) | A device that isn't smart can't be integrated; something in HA still knows when it plays. |
 | No entity at all | Optional **Listen for music** (off by default): with nothing else playing, the room's sound is the analog source | A turntable into a plain amp has nothing in HA to watch. |
 | Nothing playing | Panel off | Calm and saves power. |
@@ -83,8 +84,10 @@ TV box ────────────►│ media_player.tv_box       (sta
 
 Checked in order on every state change:
 
-1. **An analog source is playing** (its entity's attribute or state has its value: a receiver's source is `Phono In`, or a `switch.tape_deck` is `on`) → listening (below). The first on the list wins; switching to another analog source starts a new listening session. Digital sources are ignored.
-2. **A digital source is `playing`** (in an app or input on its list, if it has one) → its artwork. If several are playing, one naming a song beats one reporting none (a WiiM on its HDMI input plays "Unknown"), then one with artwork beats one without, then the one that started most recently wins.
+1. **The highest source on the list that is playing.** The list's order (`sources.order`) is the only priority. Settings from before it keep analog ahead of the players.
+   - **Analog** (its entity's attribute or state has its value: a receiver's source is `Phono In`, or a `switch.tape_deck` is `on`) → listening (below). Switching to another analog source starts a new listening session.
+   - **Digital** and `playing`, in an app or input not set to Off → its artwork, or the progress screen.
+2. **A player with no cover to show** (playing, set to Cover, no picture) gives way to one further down that is playing. One that only just paused or stopped gives way to any that is playing. A player reporting "Unknown" above another wins: set that input to Off.
 3. **Paused** → keep the artwork for the pause grace (default 30 s), then off.
 4. **Listen for music** is on and no digital source plays in any app (a TV on Netflix counts, if it's a digital source) → listening to the room: music heard for `music_start_s` (default 5 s) starts an identify; after a short gap (the next track) 1 s is enough. When the retries after misses run out, it gives up, clears the art and ignores gaps until a silence long enough to end a side.
 5. Otherwise **off**.
