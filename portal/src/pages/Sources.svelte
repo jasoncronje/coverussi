@@ -70,13 +70,15 @@
   });
   // The entity on the display: '' for the room, null for nothing.
   const shown = $derived(live.telemetry.mode && live.telemetry.mode !== 'off' ? (live.telemetry.source ?? '') : null);
+  // A player showing its cover that sent no picture: the panel has nothing to show.
+  const noCover = $derived(live.telemetry.mode === 'digital' && !live.telemetry.art);
   const playing = (entity: string) => ['playing', 'buffering'].includes(info[entity]?.state ?? '');
   const app = (entity: string) => info[entity]?.app_name || info[entity]?.source || '';
   const also = $derived(sources.digital.filter((d) => d.enabled && d.entity !== shown && playing(d.entity)));
   function status(d: DigitalSource): { text: string; pill: string } | null {
     if (!d.enabled) return { text: 'Not followed', pill: '' };
     const now = app(d.entity);
-    if (shown === d.entity) return { text: `On display${now ? ` · ${now}` : ''}`, pill: 'pill positive' };
+    if (shown === d.entity) return noCover ? { text: 'On display · no cover', pill: 'pill warning' } : { text: `On display${now ? ` · ${now}` : ''}`, pill: 'pill positive' };
     const r = info[d.entity];
     if (!r?.state) return null;
     if (playing(d.entity)) return { text: `Playing${now ? ` · ${now}` : ''}`, pill: 'pill' };
@@ -182,7 +184,7 @@
   <div class="now">
     {#if shown !== null}
       <p><span class="pill positive">On display</span>
-        <span>{shown ? live.telemetry.source_name || playerName(shown) : 'The room'}{live.telemetry.app ? ` · ${live.telemetry.app}` : ''}{live.telemetry.mode === 'analog' ? ' · analog, identified by listening' : ''}</span></p>
+        <span>{shown ? live.telemetry.source_name || playerName(shown) : 'The room'}{live.telemetry.app ? ` · ${live.telemetry.app}` : ''}{live.telemetry.mode === 'analog' ? ' · analog, identified by listening' : ''}{noCover ? ' · it sends no cover, so there’s nothing to show' : ''}</span></p>
     {:else}
       <p><span class="pill">On display</span><span class="muted">Nothing</span></p>
     {/if}

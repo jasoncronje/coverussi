@@ -142,7 +142,7 @@
     },
     {
       id: 'sources', area: 'sources', key: 'sources', title: 'What the display follows', custom: true, fields: [],
-      tip: 'What the display follows. A player tells Home Assistant what’s playing: per app or input, pick its cover, the progress screen (a ring round the edge that fills as it plays), nothing, or analog. Analog is for what can’t say what’s playing: the display listens with its mics and identifies the song. Something that isn’t a player, like a switch, is analog while it’s on. When several play, the highest on the list is shown, and nothing else decides it: drag to reorder.'
+      tip: 'What the display follows. A player tells Home Assistant what’s playing: per app or input, pick its cover, the progress screen (a ring round the edge that fills as it plays), nothing, or analog. Analog is for what can’t say what’s playing: the display listens with its mics and identifies the song. Something that isn’t a player, like a switch, is analog while it’s on. When several play, the highest on the list is shown: drag to reorder. A player with no cover to show gives way to the next one playing.'
     },
     {
       id: 'listening', area: 'general', key: 'listening', title: 'Microphone',

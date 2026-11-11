@@ -613,11 +613,13 @@ impl Device {
 
     /// (mode, the player shown, the analog source)
     ///
-    /// The highest source on the list that's playing: nothing else decides it. One that
-    /// only just paused or stopped keeps the screen while no other plays.
+    /// The highest source on the list that's playing: nothing else decides it. One with
+    /// no cover to show, or that only just paused or stopped, keeps the screen while no
+    /// other plays.
     fn choose(&self, now: Ms) -> (Mode, Option<&Player>, Option<usize>) {
         let sources = &self.settings.sources;
         let mut held: Option<(&Player, AppShow)> = None;
+        let mut blank: Option<&Player> = None;
         for entity in sources.priority() {
             let Some(p) = self.players.get(entity) else { continue };
             // An analog source plays while its state says so, whatever the player says it plays.
@@ -637,12 +639,21 @@ impl Device {
             let holds = paused_recently || just_stopped;
             // An app on the progress screen counts as playing even paused or between videos,
             // so a source below it doesn't take the screen while the next one loads.
+            // Playing with no picture (an Apple TV on YouTube): the cover would be nothing,
+            // so a source further down that has something to show goes first.
+            if p.playing() && show == AppShow::Cover && p.picture.is_empty() {
+                blank = blank.or(Some(p));
+                continue;
+            }
             if p.playing() || (holds && show == AppShow::Progress) {
                 return (mode_for(show), Some(p), None);
             }
             if holds && held.is_none() {
                 held = Some((p, show));
             }
+        }
+        if let Some(p) = blank {
+            return (Mode::Digital, Some(p), None);
         }
         if let Some((p, show)) = held {
             return (mode_for(show), Some(p), None);
@@ -1197,6 +1208,25 @@ pub(crate) mod tests {
         d.set_settings(s);
         d.update(6000);
         assert_eq!((d.mode(), d.art()), (Mode::Digital, "/tv.jpg"));
+    }
+
+    #[test]
+    fn a_player_with_no_cover_gives_way() {
+        let mut s = Settings::default();
+        s.sources.digital = vec![digital("media_player.apple_tv", &[]), digital("media_player.youtube", &[])];
+        let mut d = Device::default();
+        d.set_settings(s);
+        // Higher on the list and playing, but with no picture: alone, it has the screen.
+        d.player(player("media_player.apple_tv", "playing", "", ""), 0);
+        d.update(0);
+        assert_eq!((d.mode(), d.source().unwrap().entity.as_str()), (Mode::Digital, "media_player.apple_tv"));
+        d.player(player("media_player.youtube", "playing", "", "/thumb.jpg"), 1000);
+        d.update(1000);
+        assert_eq!((d.mode(), d.art()), (Mode::Digital, "/thumb.jpg"));
+        // With a picture, the order decides again.
+        d.player(player("media_player.apple_tv", "playing", "", "/tv.jpg"), 2000);
+        d.update(2000);
+        assert_eq!(d.art(), "/tv.jpg");
     }
 
     #[test]
