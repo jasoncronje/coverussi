@@ -141,12 +141,8 @@
       ]
     },
     {
-      id: 'digital', area: 'sources', key: 'sources', title: 'Digital sources', custom: true, fields: [],
-      tip: 'Smart players that tell Home Assistant what’s playing, like a streamer or an Apple TV. Their cover shows while they play; per app, pick its cover, the progress screen (a ring round the edge that fills as it plays) or nothing. When several play, the highest on the list shows: drag to reorder.'
-    },
-    {
-      id: 'analog', area: 'sources', key: 'sources', title: 'Analog sources', custom: true, fields: [],
-      tip: 'Devices that can’t say what’s playing, like a turntable or tape deck. When a Home Assistant state below matches, the display listens with its mics and identifies the song. When several match, the highest on the list wins: drag to reorder. No Home Assistant entity? Turn on Listen for music.'
+      id: 'sources', area: 'sources', key: 'sources', title: 'Sources', custom: true, fields: [],
+      tip: 'What the display follows. A player tells Home Assistant what’s playing: per app or input, pick its cover, the progress screen (a ring round the edge that fills as it plays), nothing, or analog. Analog is for what can’t say what’s playing: the display listens with its mics and identifies the song. Something that isn’t a player, like a switch, is analog while it’s on. Analog is heard first; when several players play, the highest on the list shows: drag to reorder.'
     },
     {
       id: 'listening', area: 'general', key: 'listening', title: 'Microphone',
@@ -388,8 +384,8 @@
         {#if g.id === 'idle'}
           <IdleScreen idle={draft.idle} onchange={(i) => { draft!.idle = i; saved = ''; }} />
         {/if}
-        {#if g.id === 'digital' || g.id === 'analog'}
-          <Sources kind={g.id} sources={draft.sources} onchange={(s) => { draft!.sources = s; saved = ''; }} />
+        {#if g.id === 'sources'}
+          <Sources sources={draft.sources} onchange={(s) => { draft!.sources = s; saved = ''; }} />
         {/if}
         {#each shown(g) as f (f.key)}
           {#if f.kind === 'transition'}

@@ -40,6 +40,26 @@ export function setAppShow(d: DigitalSource, app: string, show: AppShow): Digita
   return save(d, next);
 }
 
+/** Forget a pick: the app follows every other app again. */
+export function clearApp(d: DigitalSource, app: string): DigitalSource {
+  const l = lists(d);
+  const without = (list: string[]) => list.filter((a) => !same(a, app));
+  return save(d, { cover: without(l.cover), progress: without(l.progress), off: without(l.off), other: l.other });
+}
+
+/** The apps picked on this player, and its inputs that are analog sources. */
+export function picks(d: DigitalSource, analog: AnalogSource[] = []): string[] {
+  const out: string[] = [];
+  const all = [...analog.filter((a) => isInput(a, d.entity, a.value)).map((a) => a.value), ...d.apps, ...(d.progress ?? []), ...(d.off ?? [])];
+  for (const a of all) if (a && !out.some((o) => same(o, a))) out.push(a);
+  return out.sort((x, y) => x.localeCompare(y, undefined, { sensitivity: 'base' }));
+}
+
+/** An analog source set on a listed player's row, not a source of its own. */
+export function onPlayer(a: AnalogSource, digital: DigitalSource[]): boolean {
+  return digital.some((d) => isInput(a, d.entity, a.value));
+}
+
 export function setOtherShow(d: DigitalSource, show: AppShow): DigitalSource {
   return save(d, { ...lists(d), other: show });
 }
@@ -48,8 +68,9 @@ export function setOtherShow(d: DigitalSource, show: AppShow): DigitalSource {
 export type RowShow = AppShow | 'analog';
 
 // An analog source that is one of this player's inputs or apps. The device compares the value exactly.
-const isInput = (a: AnalogSource, entity: string, app: string) =>
-  a.entity === entity && (a.attribute === 'source' || a.attribute === 'app_name') && a.value === app;
+function isInput(a: AnalogSource, entity: string, app: string): boolean {
+  return a.entity === entity && (a.attribute === 'source' || a.attribute === 'app_name') && a.value === app;
+}
 
 /** This input is listened to: an analog source that's on wins over whatever the app shows. */
 export function isAnalog(analog: AnalogSource[], entity: string, app: string): boolean {

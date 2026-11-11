@@ -236,17 +236,12 @@
         </div>
 
       {:else if step === 'sources'}
-        {#if live.haUrl}
-          <div class="group">
-            <h2>Digital sources</h2>
-            <p class="muted">Smart players that tell Home Assistant what’s playing, like a streamer or an Apple TV. The cover comes straight from the player.</p>
-            <Sources kind="digital" sources={draft.sources} onchange={(s) => (draft!.sources = s)} />
-          </div>
-        {/if}
         <div class="group">
-          <h2>Analog sources</h2>
-          <p class="muted">Devices that can’t say what’s playing, like a turntable or tape deck. The display listens with its mics and identifies the song.</p>
-          <Sources kind="analog" sources={draft.sources} onchange={(s) => (draft!.sources = s)} />
+          <h2>Sources</h2>
+          <p class="muted">{live.haUrl
+            ? 'What the display follows. A player’s cover comes straight from it; anything that can’t say what’s playing is analog, and the display listens with its mics and identifies the song.'
+            : 'Without Home Assistant, the display listens to the room with its mics and identifies the song.'}</p>
+          <Sources ha={!!live.haUrl} sources={draft.sources} onchange={(s) => (draft!.sources = s)} />
         </div>
 
       {:else if step === 'mic'}
@@ -303,7 +298,6 @@
   .content > .muted a { color: var(--text); }
   select { width: 300px; }
   .group { display: flex; flex-direction: column; gap: 4px; }
-  .group + .group { margin-top: 12px; }
   .group > .muted { margin-bottom: 8px; }
   .note { display: flex; align-items: center; gap: 10px; color: var(--muted); }
   .note.warn { color: var(--warning); }
